@@ -2,7 +2,7 @@ const pool = require('./config/database');
 
 async function runMigration() {
   try {
-    console.log('Iniciando migracao de expiracao de planos...');
+    console.log('Iniciando migração de expiração de planos...');
 
     await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
 
@@ -39,6 +39,7 @@ async function runMigration() {
     await pool.query(`
       ALTER TABLE payment_approvals
       ADD COLUMN IF NOT EXISTS plan_requested VARCHAR(50) DEFAULT 'anual',
+      ADD COLUMN IF NOT EXISTS proof_image TEXT,
       ADD COLUMN IF NOT EXISTS notified_user BOOLEAN DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id),
       ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE,
@@ -63,9 +64,9 @@ async function runMigration() {
       WHERE notified_user IS NULL;
     `);
 
-    console.log('Migracao concluida com sucesso.');
+    console.log('Migração concluída com sucesso.');
   } catch (error) {
-    console.error('Erro na migracao:', error);
+    console.error('Erro na migração:', error);
     process.exitCode = 1;
   } finally {
     await pool.end();

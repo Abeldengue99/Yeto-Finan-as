@@ -12,6 +12,7 @@ import DashboardHome from './pages/DashboardHome';
 import Bancos from './pages/Bancos';
 import Transacoes from './pages/Transacoes';
 import Dividas from './pages/Dividas';
+import Orcamento from './pages/Orcamento';
 import Projetos from './pages/Projetos';
 import Kixikila from './pages/Kixikila';
 import Divisas from './pages/Divisas';
@@ -95,6 +96,7 @@ function App() {
       case 'bancos': return <Bancos />;
       case 'transacoes': return <Transacoes />;
       case 'dividas': return <Dividas />;
+      case 'orcamento': return <Orcamento />;
       case 'divisas': return <Divisas />;
       case 'pagamentos_fixos': return <PagamentosFixos />;
       case 'projetos': return <Projetos />;
@@ -103,7 +105,7 @@ function App() {
       case 'assistente': return <Assistente isAdmin={isAdmin} />;
       case 'planos': return <Planos user={user} />;
       // Rotas Admin
-      case 'admin_dashboard': return <AdminDashboard />;
+      case 'admin_dashboard': return <AdminDashboard setActiveTab={setActiveTab} />;
       case 'admin_users': return <AdminUsers />;
       case 'admin_payments': return <AdminPayments />;
       case 'admin_settings': return <AdminSettings />;

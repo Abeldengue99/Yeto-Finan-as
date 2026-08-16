@@ -47,7 +47,7 @@ function formatDate(expiresAt) {
   if (!expiresAt) return 'Sem data definida';
 
   const expiry = new Date(expiresAt);
-  if (Number.isNaN(expiry.getTime())) return 'Data invalida';
+  if (Number.isNaN(expiry.getTime())) return 'Data inválida';
 
   return expiry.toLocaleDateString('pt-AO', {
     day: '2-digit',

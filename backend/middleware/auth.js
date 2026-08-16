@@ -8,7 +8,7 @@ function getSessionSecret() {
   const secret = process.env.SESSION_SECRET || process.env.JWT_SECRET || process.env.DB_PASSWORD || FALLBACK_SECRET;
 
   if (process.env.NODE_ENV === 'production' && secret.length < 32) {
-    throw new Error('SESSION_SECRET deve ter pelo menos 32 caracteres em producao.');
+    throw new Error('SESSION_SECRET deve ter pelo menos 32 caracteres em produção.');
   }
 
   return secret;
@@ -96,7 +96,7 @@ async function authenticate(req, res, next) {
   const session = parseToken(token);
 
   if (!session) {
-    return res.status(401).json({ error: 'Sessao invalida ou expirada. Inicie sessao novamente.' });
+    return res.status(401).json({ error: 'Sessão inválida ou expirada. Inicie sessão novamente.' });
   }
 
   try {
@@ -108,7 +108,7 @@ async function authenticate(req, res, next) {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Sessao invalida.' });
+      return res.status(401).json({ error: 'Sessão inválida.' });
     }
 
     const user = result.rows[0];
@@ -119,8 +119,8 @@ async function authenticate(req, res, next) {
     req.user = user;
     next();
   } catch (error) {
-    console.error('Erro ao validar sessao:', error);
-    res.status(500).json({ error: 'Erro ao validar sessao.' });
+    console.error('Erro ao validar sessão:', error);
+    res.status(500).json({ error: 'Erro ao validar sessão.' });
   }
 }
 
@@ -136,7 +136,7 @@ function requireSelfParam(paramName = 'userId') {
   return (req, res, next) => {
     if (req.user?.plan_type === 'admin') return next();
     if (req.params[paramName] !== req.user?.id) {
-      return res.status(403).json({ error: 'Nao pode aceder aos dados de outro utilizador.' });
+      return res.status(403).json({ error: 'Não pode aceder aos dados de outro utilizador.' });
     }
 
     next();
@@ -148,7 +148,7 @@ function requireSelfBody(fieldName = 'userId') {
     if (req.user?.plan_type === 'admin') return next();
 
     if (req.body?.[fieldName] && req.body[fieldName] !== req.user?.id) {
-      return res.status(403).json({ error: 'Nao pode alterar dados de outro utilizador.' });
+      return res.status(403).json({ error: 'Não pode alterar dados de outro utilizador.' });
     }
 
     req.body[fieldName] = req.user.id;

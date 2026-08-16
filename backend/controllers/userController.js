@@ -19,7 +19,7 @@ const updateProfile = async (req, res) => {
     if (newPassword && newPassword.trim() !== '') {
       const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{10,}$/;
       if (!passwordRegex.test(newPassword)) {
-        return res.status(400).json({ error: 'A senha deve ter pelo menos 10 caracteres, incluir uma letra, um numero e um caractere especial.' });
+        return res.status(400).json({ error: 'A senha deve ter pelo menos 10 caracteres, incluir uma letra, um número e um caractere especial.' });
       }
 
       const salt = await bcrypt.genSalt(10);

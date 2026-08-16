@@ -91,7 +91,7 @@ const getConversation = async (req, res) => {
   try {
     const conversation = await getConversationForRequest(pool, id, req);
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversa nao encontrada.' });
+      return res.status(404).json({ error: 'Conversa não encontrada.' });
     }
 
     const unreadSenderRole = isAdmin(req) ? 'user' : 'admin';
@@ -173,7 +173,7 @@ const sendMessage = async (req, res) => {
     const conversation = await getConversationForRequest(client, id, req);
     if (!conversation) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Conversa nao encontrada.' });
+      return res.status(404).json({ error: 'Conversa não encontrada.' });
     }
 
     const senderRole = isAdmin(req) ? 'admin' : 'user';
@@ -211,7 +211,7 @@ const updateConversationStatus = async (req, res) => {
   try {
     const conversation = await getConversationForRequest(pool, id, req);
     if (!conversation) {
-      return res.status(404).json({ error: 'Conversa nao encontrada.' });
+      return res.status(404).json({ error: 'Conversa não encontrada.' });
     }
 
     const result = await pool.query(

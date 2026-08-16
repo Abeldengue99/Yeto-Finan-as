@@ -94,7 +94,7 @@ function validateUuidParam(paramName) {
   return (req, res, next) => {
     const value = req.params[paramName];
     if (!value || !UUID_REGEX.test(value)) {
-      return res.status(400).json({ error: 'Identificador invalido.' });
+    return res.status(400).json({ error: 'Identificador inválido.' });
     }
 
     next();
@@ -160,18 +160,18 @@ function requestLogger(req, res, next) {
 }
 
 function notFoundHandler(req, res) {
-  res.status(404).json({ error: 'Rota nao encontrada.' });
+  res.status(404).json({ error: 'Rota não encontrada.' });
 }
 
 function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
   if (err.message && err.message.includes('CORS')) {
-    return res.status(403).json({ error: 'Origem nao autorizada.' });
+    return res.status(403).json({ error: 'Origem não autorizada.' });
   }
 
   if (err.type === 'entity.parse.failed') {
-    return res.status(400).json({ error: 'JSON invalido.' });
+    return res.status(400).json({ error: 'JSON inválido.' });
   }
 
   if (err.type === 'entity.too.large') {

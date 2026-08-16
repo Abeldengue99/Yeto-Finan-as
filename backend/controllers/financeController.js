@@ -7,7 +7,8 @@ const OWNED_TABLES = new Set([
   'fixed_payments',
   'projects',
   'kixikila_groups',
-  'foreign_currency'
+  'foreign_currency',
+  'budgets'
 ]);
 
 function isAdminRequest(req) {
@@ -20,7 +21,7 @@ function getRequestUserId(req, fallbackUserId) {
 
 async function getOwnedResource(db, table, id, req) {
   if (!OWNED_TABLES.has(table)) {
-    throw new Error('Tabela nao autorizada para verificacao de propriedade.');
+    throw new Error('Tabela não autorizada para verificação de propriedade.');
   }
 
   const params = [id];
@@ -53,6 +54,16 @@ function appendOwnerFilter(req, params) {
   return ` AND user_id = $${params.length}`;
 }
 
+function getMonthKey(value) {
+  const candidate = String(value || '').trim();
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(candidate)) return candidate;
+  return new Date().toISOString().slice(0, 7);
+}
+
+function cleanBudgetCategory(value) {
+  return String(value || '').trim().slice(0, 120);
+}
+
 const getUserFinances = async (req, res) => {
   const { userId } = req.params;
 
@@ -65,7 +76,7 @@ const getUserFinances = async (req, res) => {
     const user = userRes.rows[0];
 
     if (!user) {
-      return res.status(404).json({ error: 'Utilizador nao encontrado.' });
+      return res.status(404).json({ error: 'Utilizador não encontrado.' });
     }
 
     if (user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
@@ -106,6 +117,14 @@ const getUserFinances = async (req, res) => {
     // 7. Fetch Divisas
     const divisasResult = await pool.query('SELECT * FROM foreign_currency WHERE user_id = $1 ORDER BY purchase_date DESC', [userId]);
     const divisas = divisasResult.rows;
+
+    // 8. Fetch current month budgets
+    const currentMonth = getMonthKey();
+    const budgetsResult = await pool.query(
+      'SELECT * FROM budgets WHERE user_id = $1 AND month_key = $2 ORDER BY category ASC',
+      [userId, currentMonth]
+    );
+    const budgets = budgetsResult.rows;
 
     // Calculate Total Balance directly from accounts
     const saldoTotal = accounts.reduce((acc, curr) => acc + Number(curr.balance), 0);
@@ -174,12 +193,101 @@ const getUserFinances = async (req, res) => {
         montante: Number(d.amount_bought),
         taxaCompra: Number(d.exchange_rate),
         data: d.purchase_date ? new Date(d.purchase_date).toISOString().split('T')[0] : ''
+      })),
+      orcamentos: budgets.map(b => ({
+        id: b.id,
+        categoria: b.category,
+        mes: b.month_key,
+        limite: Number(b.monthly_limit)
       }))
     });
 
   } catch (error) {
     console.error('Error fetching user finances:', error);
     res.status(500).json({ error: 'Erro interno do servidor ao carregar finanças.' });
+  }
+};
+
+const getBudgets = async (req, res) => {
+  const { userId } = req.params;
+  const monthKey = getMonthKey(req.query.month);
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM budgets WHERE user_id = $1 AND month_key = $2 ORDER BY category ASC',
+      [userId, monthKey]
+    );
+
+    res.json({
+      month: monthKey,
+      budgets: result.rows.map(row => ({
+        id: row.id,
+        categoria: row.category,
+        mes: row.month_key,
+        limite: Number(row.monthly_limit)
+      }))
+    });
+  } catch (error) {
+    console.error('Erro ao carregar orçamentos:', error);
+    res.status(500).json({ error: 'Erro ao carregar orçamentos.' });
+  }
+};
+
+const upsertBudget = async (req, res) => {
+  let { userId, category, month, monthlyLimit } = req.body;
+  userId = getRequestUserId(req, userId);
+
+  const cleanCategory = cleanBudgetCategory(category);
+  const monthKey = getMonthKey(month);
+  const limit = Number(monthlyLimit);
+
+  if (!cleanCategory) {
+    return res.status(400).json({ error: 'Informe uma categoria para o orçamento.' });
+  }
+
+  if (!Number.isFinite(limit) || limit < 0) {
+    return res.status(400).json({ error: 'Informe um limite mensal válido.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO budgets (user_id, category, month_key, monthly_limit)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, category, month_key)
+       DO UPDATE SET monthly_limit = EXCLUDED.monthly_limit, updated_at = CURRENT_TIMESTAMP
+       RETURNING *`,
+      [userId, cleanCategory, monthKey, limit]
+    );
+
+    const budget = result.rows[0];
+    res.status(201).json({
+      id: budget.id,
+      categoria: budget.category,
+      mes: budget.month_key,
+      limite: Number(budget.monthly_limit)
+    });
+  } catch (error) {
+    console.error('Erro ao guardar orçamento:', error);
+    res.status(500).json({ error: 'Erro ao guardar orçamento.' });
+  }
+};
+
+const deleteBudget = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM budgets WHERE id = $1${ownerFilter} RETURNING id`, params);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Orçamento não encontrado.' });
+    }
+
+    res.json({ message: 'Orçamento eliminado com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao eliminar orçamento:', error);
+    res.status(500).json({ error: 'Erro ao eliminar orçamento.' });
   }
 };
 
@@ -212,7 +320,7 @@ const createTransaction = async (req, res) => {
     const ownsAccount = await ensureAccountOwnership(client, accountId, userId);
     if (!ownsAccount) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+      return res.status(403).json({ error: 'Conta não pertence ao utilizador autenticado.' });
     }
 
     // 1. Inserir a transação
@@ -275,7 +383,7 @@ const payDebt = async (req, res) => {
     const ownsAccount = await ensureAccountOwnership(client, accountId, debt.user_id);
     if (!ownsAccount) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+      return res.status(403).json({ error: 'Conta não pertence ao utilizador autenticado.' });
     }
 
     // Atualizar estado da dívida
@@ -339,7 +447,7 @@ const payFixedPayment = async (req, res) => {
     const ownsAccount = await ensureAccountOwnership(client, accountId, fixed.user_id);
     if (!ownsAccount) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+      return res.status(403).json({ error: 'Conta não pertence ao utilizador autenticado.' });
     }
 
     // Marcar como pago este mês
@@ -402,7 +510,7 @@ const receiveKixikilaHand = async (req, res) => {
     const ownsAccount = await ensureAccountOwnership(client, accountId, kixikila.user_id);
     if (!ownsAccount) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+      return res.status(403).json({ error: 'Conta não pertence ao utilizador autenticado.' });
     }
 
     // Atualizar saldo da conta
@@ -457,7 +565,7 @@ const createForeignCurrency = async (req, res) => {
     const ownsAccount = await ensureAccountOwnership(client, accountId, userId);
     if (!ownsAccount) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+      return res.status(403).json({ error: 'Conta não pertence ao utilizador autenticado.' });
     }
     
     // Inserir compra de divisas
@@ -508,7 +616,7 @@ const fundProject = async (req, res) => {
     const ownsAccount = await ensureAccountOwnership(client, accountId, project.user_id);
     if (!ownsAccount) {
       await client.query('ROLLBACK');
-      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+      return res.status(403).json({ error: 'Conta não pertence ao utilizador autenticado.' });
     }
 
     // Atualizar valor guardado
@@ -839,6 +947,9 @@ module.exports = {
   createProject, updateProject, deleteProject,
   fundProject,
   createForeignCurrency,
+  getBudgets,
+  upsertBudget,
+  deleteBudget,
   uploadPaymentProof,
   getPaymentStatus
 };

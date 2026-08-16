@@ -35,7 +35,7 @@ async function migrateAssistant() {
 
     console.log('Sistema de assistente migrado com sucesso.');
   } catch (error) {
-    console.error('Erro na migracao do assistente:', error);
+    console.error('Erro na migração do assistente:', error);
     process.exitCode = 1;
   } finally {
     await pool.end();

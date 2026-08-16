@@ -60,7 +60,7 @@ export async function readJsonResponse(response, fallbackMessage = 'Resposta ine
     await response.text().catch(() => '');
     throw new Error(
       response.status === 404
-        ? 'Esta funcionalidade ainda nao esta ativa no servidor. Reinicie o backend e tente novamente.'
+        ? 'Esta funcionalidade ainda não está ativa no servidor. Reinicie o backend e tente novamente.'
         : fallbackMessage
     );
   }

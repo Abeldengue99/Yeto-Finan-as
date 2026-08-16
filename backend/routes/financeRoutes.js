@@ -7,6 +7,7 @@ const { validateUuidParam } = require('../middleware/security');
 router.use(authenticate);
 
 router.get('/payment-status/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getPaymentStatus);
+router.get('/:userId/budgets', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getBudgets);
 router.get('/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getUserFinances);
 
 // Contas
@@ -43,6 +44,9 @@ router.delete('/project/:id', validateUuidParam('id'), requirePlanAccess, financ
 router.put('/project/:id/fund', validateUuidParam('id'), requirePlanAccess, financeController.fundProject);
 
 router.post('/currency', requirePlanAccess, requireSelfBody('userId'), financeController.createForeignCurrency);
+
+router.post('/budget', requirePlanAccess, requireSelfBody('userId'), financeController.upsertBudget);
+router.delete('/budget/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteBudget);
 
 // Subscricao
 router.post('/payment-proof', requireSelfBody('userId'), financeController.uploadPaymentProof);

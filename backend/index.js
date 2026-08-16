@@ -52,12 +52,12 @@ app.get('/api/db-test', authenticate, requireAdmin, async (req, res) => {
     const result = await pool.query('SELECT NOW() AS current_time');
     res.status(200).json({
       status: 'success',
-      message: 'Conexao a base de dados bem-sucedida.',
+      message: 'Conexão à base de dados bem-sucedida.',
       time: result.rows[0].current_time
     });
   } catch (error) {
     console.error('Erro ao conectar a BD:', error);
-    res.status(500).json({ status: 'error', message: 'Falha na conexao a base de dados.' });
+    res.status(500).json({ status: 'error', message: 'Falha na conexão à base de dados.' });
   }
 });
 

@@ -10,11 +10,14 @@ export function useAdmin() {
 export function AdminProvider({ children, isAdmin = false }) {
   const [users, setUsers] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
+  const [assistantConversations, setAssistantConversations] = useState([]);
+  const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+  const [lastAdminRefresh, setLastAdminRefresh] = useState(null);
   const [planPrices, setPlanPrices] = useState({
     semestral: 4999,
     anual: 7999
   });
-  
+
   const [systemSettings, setSystemSettings] = useState({
     maintenanceMode: false,
     allowRegistrations: true,
@@ -26,85 +29,120 @@ export function AdminProvider({ children, isAdmin = false }) {
     premiumUsers: 0,
     pendingApprovals: 0,
     mrr: 0,
+    conversionRate: 0,
+    blockedUsers: 0,
+    expiredUsers: 0,
+    expiringSoon: 0,
+    newUsers7d: 0,
+    newUsersToday: 0,
+    assistantUnread: 0
   });
 
-  const loadAdminData = async () => {
+  const loadAdminData = React.useCallback(async () => {
+    if (!isAdmin) return;
+
+    setIsLoadingAdmin(true);
     try {
-      const [statsRes, usersRes, logsRes, paymentsRes] = await Promise.all([
+      const [statsRes, usersRes, logsRes, paymentsRes, assistantRes] = await Promise.all([
         apiFetch('/api/admin/stats'),
         apiFetch('/api/admin/users'),
         apiFetch('/api/admin/logs'),
-        apiFetch('/api/admin/payments/pending')
+        apiFetch('/api/admin/payments/pending'),
+        apiFetch('/api/assistant/conversations')
       ]);
 
       if (statsRes.ok) {
         const data = await statsRes.json();
         setStats({
-          totalUsers: data.totalUsers,
-          premiumUsers: data.activeSubscriptions,
-          pendingApprovals: data.pendingApprovals,
-          mrr: data.monthlyRevenue
+          totalUsers: data.totalUsers || 0,
+          premiumUsers: data.activeSubscriptions || 0,
+          pendingApprovals: data.pendingApprovals || 0,
+          mrr: data.monthlyRevenue || 0,
+          conversionRate: data.conversionRate || 0,
+          blockedUsers: data.blockedUsers || 0,
+          expiredUsers: data.expiredUsers || 0,
+          expiringSoon: data.expiringSoon || 0,
+          newUsers7d: data.newUsers7d || 0,
+          newUsersToday: data.newUsersToday || 0,
+          assistantUnread: data.assistantUnread || 0
         });
       }
 
       if (usersRes.ok) {
         const data = await usersRes.json();
         const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin' };
-        setUsers(data.map(u => ({
-          id: u.id,
-          nome: u.name,
-          email: u.email,
-          plano: planMap[u.plan_type] || u.plan_type,
-          status: u.status === 'active' ? 'Ativo' : 'Bloqueado',
-          dataRegisto: u.created_at,
-          dataExpiracao: u.plan_expires_at
+        setUsers(data.map(user => ({
+          id: user.id,
+          nome: user.name,
+          email: user.email,
+          ocupacao: user.occupation || '',
+          plano: planMap[user.plan_type] || user.plan_type,
+          status: user.status === 'active' ? 'Ativo' : 'Bloqueado',
+          dataRegisto: user.created_at,
+          dataExpiracao: user.plan_expires_at
         })));
       }
 
       if (paymentsRes.ok) {
         const data = await paymentsRes.json();
-        setPendingPayments(data.map(p => {
-          const plano = p.plan_requested === 'semestral' ? 'semestral' : 'anual';
+        setPendingPayments(data.map(payment => {
+          const plano = payment.plan_requested === 'semestral' ? 'semestral' : 'anual';
           return {
-            id: p.id,
-            userId: p.user_id,
-            nome: p.user_name,
-            email: p.user_email,
+            id: payment.id,
+            userId: payment.user_id,
+            nome: payment.user_name,
+            email: payment.user_email,
             banco: 'Comprovativo enviado',
             plano,
             valor: plano === 'semestral' ? planPrices.semestral : planPrices.anual,
-            comprovativoUrl: p.proof_image,
-            dataSubmissao: p.submitted_at ? new Date(p.submitted_at).toLocaleString() : ''
+            comprovativoUrl: payment.proof_image,
+            dataSubmissao: payment.submitted_at ? new Date(payment.submitted_at).toLocaleString('pt-AO') : ''
           };
         }));
       }
 
       if (logsRes.ok) {
         const data = await logsRes.json();
-        setLogs(data.map(l => ({
-          id: l.id,
-          data: new Date(l.created_at).toLocaleString(),
-          acao: l.description,
-          tipo: l.action_type
+        setLogs(data.map(log => ({
+          id: log.id,
+          data: new Date(log.created_at).toLocaleString('pt-AO'),
+          acao: log.description,
+          tipo: log.action_type
         })));
       }
+
+      if (assistantRes.ok) {
+        const data = await assistantRes.json();
+        setAssistantConversations(data.conversations || []);
+      }
+
+      setLastAdminRefresh(new Date().toISOString());
     } catch (err) {
       console.error('Erro ao carregar dados admin:', err);
+    } finally {
+      setIsLoadingAdmin(false);
     }
-  };
+  }, [isAdmin, planPrices.anual, planPrices.semestral]);
 
   React.useEffect(() => {
-    if (isAdmin) {
-      loadAdminData();
+    if (!isAdmin) {
+      setUsers([]);
+      setPendingPayments([]);
+      setAssistantConversations([]);
+      return undefined;
     }
-  }, [isAdmin]);
+
+    loadAdminData();
+    const intervalId = setInterval(loadAdminData, 30000);
+    return () => clearInterval(intervalId);
+  }, [isAdmin, loadAdminData]);
 
   const getStats = () => stats;
 
   const addLog = (acao, tipo = 'info') => {
     const newLog = {
       id: Date.now(),
-      data: new Date().toLocaleString(),
+      data: new Date().toLocaleString('pt-AO'),
       acao,
       tipo
     };
@@ -112,7 +150,7 @@ export function AdminProvider({ children, isAdmin = false }) {
   };
 
   const approvePayment = async (paymentId) => {
-    const payment = pendingPayments.find(p => p.id === paymentId);
+    const payment = pendingPayments.find(item => item.id === paymentId);
     if (!payment) return;
 
     try {
@@ -123,12 +161,12 @@ export function AdminProvider({ children, isAdmin = false }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Erro ao aprovar pagamento.');
 
-      setUsers(users.map(u => (
-        u.id === payment.userId
-          ? { ...u, plano: 'Premium', status: 'Ativo', dataExpiracao: data.user?.plan_expires_at }
-          : u
+      setUsers(prev => prev.map(user => (
+        user.id === payment.userId
+          ? { ...user, plano: 'Premium', status: 'Ativo', dataExpiracao: data.user?.plan_expires_at }
+          : user
       )));
-      setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
+      setPendingPayments(prev => prev.filter(item => item.id !== paymentId));
       addLog(`Aprovado pagamento ${payment.plano} de ${payment.nome}`, 'success');
       await loadAdminData();
     } catch (err) {
@@ -138,7 +176,7 @@ export function AdminProvider({ children, isAdmin = false }) {
   };
 
   const rejectPayment = async (paymentId) => {
-    const payment = pendingPayments.find(p => p.id === paymentId);
+    const payment = pendingPayments.find(item => item.id === paymentId);
     if (!payment) return;
 
     try {
@@ -150,7 +188,7 @@ export function AdminProvider({ children, isAdmin = false }) {
       if (!response.ok) throw new Error(data.error || 'Erro ao rejeitar pagamento.');
 
       addLog(`Rejeitado comprovativo de pagamento de ${payment.nome}`, 'danger');
-      setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
+      setPendingPayments(prev => prev.filter(item => item.id !== paymentId));
       await loadAdminData();
     } catch (err) {
       console.error('Erro ao rejeitar pagamento:', err);
@@ -159,35 +197,39 @@ export function AdminProvider({ children, isAdmin = false }) {
   };
 
   const toggleUserStatus = (userId) => {
-    setUsers(users.map(u => {
-      if (u.id === userId) {
-        const novoStatus = u.status === 'Ativo' ? 'Bloqueado' : 'Ativo';
-        addLog(`Estado da conta de ${u.nome} alterado para ${novoStatus}`, novoStatus === 'Ativo' ? 'success' : 'danger');
-        return { ...u, status: novoStatus };
+    setUsers(prev => prev.map(user => {
+      if (user.id === userId) {
+        const novoStatus = user.status === 'Ativo' ? 'Bloqueado' : 'Ativo';
+        addLog(`Estado da conta de ${user.nome} alterado para ${novoStatus}`, novoStatus === 'Ativo' ? 'success' : 'danger');
+        return { ...user, status: novoStatus };
       }
-      return u;
+      return user;
     }));
   };
 
   const changeUserPlan = (userId, novoPlano) => {
-    setUsers(users.map(u => {
-      if (u.id === userId) {
-        addLog(`Plano de ${u.nome} alterado manualmente para ${novoPlano}`, 'info');
-        return { ...u, plano: novoPlano, status: 'Ativo' };
+    setUsers(prev => prev.map(user => {
+      if (user.id === userId) {
+        addLog(`Plano de ${user.nome} alterado manualmente para ${novoPlano}`, 'info');
+        return { ...user, plano: novoPlano, status: 'Ativo' };
       }
-      return u;
+      return user;
     }));
   };
 
   const value = {
     users,
     pendingPayments,
+    assistantConversations,
+    isLoadingAdmin,
+    lastAdminRefresh,
     planPrices,
     setPlanPrices,
     systemSettings,
     setSystemSettings,
     logs,
     addLog,
+    loadAdminData,
     getStats,
     approvePayment,
     rejectPayment,

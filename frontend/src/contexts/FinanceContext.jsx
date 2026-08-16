@@ -79,6 +79,7 @@ export function FinanceProvider({ children, userId }) {
   const [kixikilas, setKixikilas] = useState([]);
   const [projetos, setProjetos] = useState([]);
   const [divisas, setDivisas] = useState([]);
+  const [orcamentos, setOrcamentos] = useState([]);
   const [pagamentosFixos, setPagamentosFixos] = useState([]);
   const [saldoTotal, setSaldoTotal] = useState(0);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -97,6 +98,7 @@ export function FinanceProvider({ children, userId }) {
       setPagamentosFixos(data.pagamentosFixos || []);
       setProjetos(data.projetos || []);
       setKixikilas(data.kixikilas || []);
+      setOrcamentos(data.orcamentos || []);
 
       // Hydrate user info from DB
       if (data.user) {
@@ -106,7 +108,7 @@ export function FinanceProvider({ children, userId }) {
         if (data.user.plan_type !== 'admin' && trialDaysLeft <= 3 && trialDaysLeft > 0) {
           mostrarAlerta(
             'Aviso: Plano a Terminar',
-            `O seu acesso termina em ${trialDaysLeft} dias. Renove agora para nao perder as funcionalidades Premium.`,
+            `O seu acesso termina em ${trialDaysLeft} dias. Renove agora para não perder as funcionalidades Premium.`,
             'aviso',
             false
           );
@@ -115,7 +117,7 @@ export function FinanceProvider({ children, userId }) {
         if (planExpired) {
           mostrarAlerta(
             'Plano Expirado',
-            'O seu periodo de acesso terminou. Renove o plano para desbloquear novamente as funcionalidades Premium.',
+            'O seu período de acesso terminou. Renove o plano para desbloquear novamente as funcionalidades Premium.',
             'erro',
             false
           );
@@ -527,7 +529,7 @@ export function FinanceProvider({ children, userId }) {
       );
 
       mostrarAlerta(
-        'Receita Registada', `Foram recebidos ${valorLiquido} Kz. O sistema guardou automaticamente ${valorCofre} Kz (5%, 'sucesso') no Cofre de Desrascanço.`
+        'Receita Registada', `Foram recebidos ${valorLiquido} Kz. O sistema guardou automaticamente ${valorCofre} Kz (5%) no Cofre de Desrascanço.`
       );
     } catch (err) {
       console.error(err);
@@ -956,6 +958,86 @@ export function FinanceProvider({ children, userId }) {
     }
   };
 
+  // Funções para Orçamento Familiar
+  const carregarOrcamentos = async (mes) => {
+    if (!userId) return [];
+
+    try {
+      const query = mes ? `?month=${encodeURIComponent(mes)}` : '';
+      const res = await apiFetch(`/api/finances/${userId}/budgets${query}`);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao carregar orçamentos');
+      }
+
+      const lista = data.budgets || [];
+      setOrcamentos(lista);
+      return lista;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível carregar os orçamentos.', 'erro');
+      return [];
+    }
+  };
+
+  const guardarOrcamento = async ({ categoria, limite, mes }) => {
+    if (!userId) return null;
+
+    try {
+      const res = await apiFetch('/api/finances/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          category: categoria,
+          month: mes,
+          monthlyLimit: Number(limite)
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao guardar orçamento');
+      }
+
+      setOrcamentos(atuais => {
+        const existe = atuais.some(item => item.id === data.id);
+        if (existe) {
+          return atuais.map(item => item.id === data.id ? data : item);
+        }
+
+        return [...atuais.filter(item => !(item.categoria === data.categoria && item.mes === data.mes)), data]
+          .sort((a, b) => a.categoria.localeCompare(b.categoria));
+      });
+      mostrarAlerta('Orçamento Guardado', `Limite de ${data.categoria} atualizado com sucesso.`, 'sucesso');
+      return data;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível guardar o orçamento.', 'erro');
+      return null;
+    }
+  };
+
+  const eliminarOrcamento = async (id) => {
+    try {
+      const res = await apiFetch(`/api/finances/budget/${id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao eliminar orçamento');
+      }
+
+      setOrcamentos(atuais => atuais.filter(item => item.id !== id));
+      mostrarAlerta('Orçamento Eliminado', 'O limite da categoria foi removido.', 'sucesso');
+      return true;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível eliminar o orçamento.', 'erro');
+      return false;
+    }
+  };
+
   // Funções de Gamificação
 
   const resgatarPremium = async () => {
@@ -1087,12 +1169,13 @@ export function FinanceProvider({ children, userId }) {
       editarPagamentoFixo, eliminarPagamentoFixo,
       editarProjeto, eliminarProjeto,
       editarKixikila, eliminarKixikila,
-      contas, despesas, dividas, kixikilas, projetos, receitas, movimentos, divisas, pagamentosFixos,
+      contas, despesas, dividas, kixikilas, projetos, receitas, movimentos, divisas, orcamentos, pagamentosFixos,
       categoriasEntradas, categoriasSaidas, adicionarCategoria, removerCategoria,
       registrarDespesa, adicionarReceita, adicionarConta,
       adicionarDivida, liquidarDivida,
       adicionarKixikila, receberMaoKixikila,
       adicionarProjeto, depositarProjeto, adicionarDivisa,
+      carregarOrcamentos, guardarOrcamento, eliminarOrcamento,
       adicionarPagamentoFixo, marcarPagamentoFixoComoPago,
       saldoTotal,
       yetoPoints, nivelAtual, desafiosAtivos, conquistas, completarDesafio, resgatarPremium, adicionarDesafio,

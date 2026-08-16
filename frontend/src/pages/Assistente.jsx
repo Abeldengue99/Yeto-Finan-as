@@ -223,7 +223,7 @@ export default function Assistente({ isAdmin = false }) {
               <p className="text-secondary" style={{ padding: '1rem' }}>A carregar...</p>
             ) : !hasConversations ? (
               <p className="text-secondary" style={{ padding: '1rem', lineHeight: 1.5 }}>
-                {isAdmin ? 'Ainda nao existem pedidos.' : 'Ainda nao iniciou nenhuma conversa.'}
+                {isAdmin ? 'Ainda não existem pedidos.' : 'Ainda não iniciou nenhuma conversa.'}
               </p>
             ) : (
               conversations.map(item => (

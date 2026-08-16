@@ -5,14 +5,14 @@ import Modal from '../components/Modal';
 import GlobalAlert from '../components/GlobalAlert';
 import PlanCountdown from '../components/PlanCountdown';
 
-const PREMIUM_TABS = new Set(['divisas', 'projetos', 'gamificacao', 'kixikila']);
+const PREMIUM_TABS = new Set(['orcamento', 'divisas', 'projetos', 'gamificacao', 'kixikila']);
 
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { 
     usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData,
     movimentos = [], dividas = [], kixikilas = [], projetos = [], assistantUnreadCount = 0
   } = useFinance();
-  const { systemSettings } = useAdmin();
+  const { systemSettings, pendingPayments = [] } = useAdmin();
   
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -21,6 +21,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
   const unreadCount = notificacoes.filter(n => !n.lida).length;
   const assistantBadge = assistantUnreadCount > 99 ? '99+' : assistantUnreadCount;
+  const pendingPaymentsBadge = pendingPayments.length > 99 ? '99+' : pendingPayments.length;
 
   // Sistema de Pesquisa Global
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,6 +66,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
       return;
     }
 
+    setShowMobileMenu(false);
     setActiveTab(tab);
   };
 
@@ -185,6 +187,9 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           <button className={`sidebar-link ${activeTab === 'transacoes' ? 'active' : ''}`} onClick={() => setActiveTab('transacoes')}>
             <span>💸</span> Transações
           </button>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'orcamento' ? 'active' : ''}`} onClick={() => navigateToTab('orcamento')}>
+            <span>📋</span> Orçamento
+          </button>
           
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => setActiveTab('dividas')}>
             <span>⚠️</span> Dívidas
@@ -224,6 +229,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               </button>
               <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => setActiveTab('admin_payments')}>
                 <span>💳</span> Pagamentos
+                {pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}
               </button>
               <button className={`sidebar-link hide-on-mobile ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => setActiveTab('assistente')}>
                 <span>?</span> Assistente
@@ -534,7 +540,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             !
           </div>
           <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
-            O seu periodo de acesso terminou. Renove o plano para voltar a usar as funcionalidades Premium.
+            O seu período de acesso terminou. Renove o plano para voltar a usar as funcionalidades Premium.
           </p>
           <button className="btn btn-primary btn-pill" onClick={goToPlans} style={{ width: '100%' }}>
             Renovar Agora
@@ -570,7 +576,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                   <div className="mobile-menu-section-title" style={{ marginTop: '0.5rem' }}>Administração</div>
                   <button className={`mobile-menu-link ${activeTab === 'admin_dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_dashboard'); setShowMobileMenu(false); }}><span>👑</span> Visão Geral</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_users' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_users'); setShowMobileMenu(false); }}><span>👥</span> Utilizadores</button>
-                  <button className={`mobile-menu-link ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_payments'); setShowMobileMenu(false); }}><span>💳</span> Pagamentos</button>
+                  <button className={`mobile-menu-link ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_payments'); setShowMobileMenu(false); }}><span>💳</span> Pagamentos{pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}</button>
                   <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente{assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_settings'); setShowMobileMenu(false); }}><span>⚙️</span> Configurações Globais</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_logs' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_logs'); setShowMobileMenu(false); }}><span>📜</span> Histórico & Logs</button>
@@ -581,6 +587,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               <button className={`mobile-menu-link ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); setShowMobileMenu(false); }}><span>📊</span> Dashboard</button>
               <button className={`mobile-menu-link ${activeTab === 'bancos' ? 'active' : ''}`} onClick={() => { setActiveTab('bancos'); setShowMobileMenu(false); }}><span>🏦</span> Bancos & Carteiras</button>
               <button className={`mobile-menu-link ${activeTab === 'transacoes' ? 'active' : ''}`} onClick={() => { setActiveTab('transacoes'); setShowMobileMenu(false); }}><span>💸</span> Transações</button>
+              <button className={`mobile-menu-link ${activeTab === 'orcamento' ? 'active' : ''}`} onClick={() => navigateToTab('orcamento')}><span>📋</span> Orçamento Familiar</button>
               <button className={`mobile-menu-link ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => { setActiveTab('dividas'); setShowMobileMenu(false); }}><span>⚠️</span> Dívidas</button>
               <button className={`mobile-menu-link ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => { setActiveTab('pagamentos_fixos'); setShowMobileMenu(false); }}><span>📅</span> Pagamentos Fixos</button>
               {!isAdmin && (
