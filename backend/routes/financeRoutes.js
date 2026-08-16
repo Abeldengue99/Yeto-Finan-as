@@ -1,49 +1,50 @@
 const express = require('express');
 const router = express.Router();
 const financeController = require('../controllers/financeController');
+const { authenticate, requirePlanAccess, requireSelfBody, requireSelfParam } = require('../middleware/auth');
+const { validateUuidParam } = require('../middleware/security');
 
-// GET /api/finances/:userId
-router.get('/:userId', financeController.getUserFinances);
+router.use(authenticate);
 
-// Accounts
-router.post('/account', financeController.createAccount);
-router.put('/account/:id', financeController.updateAccount);
-router.delete('/account/:id', financeController.deleteAccount);
+router.get('/payment-status/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getPaymentStatus);
+router.get('/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getUserFinances);
 
-// Transactions
-router.post('/transaction', financeController.createTransaction);
-router.put('/transaction/:id', financeController.updateTransaction);
-router.delete('/transaction/:id', financeController.deleteTransaction);
+// Contas
+router.post('/account', requireSelfBody('userId'), financeController.createAccount);
+router.put('/account/:id', validateUuidParam('id'), financeController.updateAccount);
+router.delete('/account/:id', validateUuidParam('id'), financeController.deleteAccount);
 
-// Debts
-router.post('/debt', financeController.createDebt);
-router.put('/debt/:id', financeController.updateDebt);
-router.delete('/debt/:id', financeController.deleteDebt);
-router.put('/debt/:id/pay', financeController.payDebt);
+// Transacoes
+router.post('/transaction', requireSelfBody('userId'), financeController.createTransaction);
+router.put('/transaction/:id', validateUuidParam('id'), financeController.updateTransaction);
+router.delete('/transaction/:id', validateUuidParam('id'), financeController.deleteTransaction);
 
-// Fixed Payments
-router.post('/fixed-payment', financeController.createFixedPayment);
-router.put('/fixed-payment/:id', financeController.updateFixedPayment);
-router.delete('/fixed-payment/:id', financeController.deleteFixedPayment);
-router.put('/fixed-payment/:id/pay', financeController.payFixedPayment);
+// Dividas
+router.post('/debt', requireSelfBody('userId'), financeController.createDebt);
+router.put('/debt/:id', validateUuidParam('id'), financeController.updateDebt);
+router.delete('/debt/:id', validateUuidParam('id'), financeController.deleteDebt);
+router.put('/debt/:id/pay', validateUuidParam('id'), financeController.payDebt);
 
-// Kixikilas
-router.post('/kixikila', financeController.createKixikila);
-router.put('/kixikila/:id', financeController.updateKixikila);
-router.delete('/kixikila/:id', financeController.deleteKixikila);
-router.put('/kixikila/:id/pay', financeController.receiveKixikilaHand);
+// Pagamentos fixos
+router.post('/fixed-payment', requireSelfBody('userId'), financeController.createFixedPayment);
+router.put('/fixed-payment/:id', validateUuidParam('id'), financeController.updateFixedPayment);
+router.delete('/fixed-payment/:id', validateUuidParam('id'), financeController.deleteFixedPayment);
+router.put('/fixed-payment/:id/pay', validateUuidParam('id'), financeController.payFixedPayment);
 
-// Projects
-router.post('/project', financeController.createProject);
-router.put('/project/:id', financeController.updateProject);
-router.delete('/project/:id', financeController.deleteProject);
-router.put('/project/:id/fund', financeController.fundProject);
+// Funcionalidades Premium: trial gratis ativo ou plano premium ativo
+router.post('/kixikila', requirePlanAccess, requireSelfBody('userId'), financeController.createKixikila);
+router.put('/kixikila/:id', validateUuidParam('id'), requirePlanAccess, financeController.updateKixikila);
+router.delete('/kixikila/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteKixikila);
+router.put('/kixikila/:id/pay', validateUuidParam('id'), requirePlanAccess, financeController.receiveKixikilaHand);
 
-// Divisas
-router.post('/currency', financeController.createForeignCurrency);
+router.post('/project', requirePlanAccess, requireSelfBody('userId'), financeController.createProject);
+router.put('/project/:id', validateUuidParam('id'), requirePlanAccess, financeController.updateProject);
+router.delete('/project/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteProject);
+router.put('/project/:id/fund', validateUuidParam('id'), requirePlanAccess, financeController.fundProject);
 
-// Pagamento de Subscrição
-router.post('/payment-proof', financeController.uploadPaymentProof);
-router.get('/payment-status/:userId', financeController.getPaymentStatus);
+router.post('/currency', requirePlanAccess, requireSelfBody('userId'), financeController.createForeignCurrency);
+
+// Subscricao
+router.post('/payment-proof', requireSelfBody('userId'), financeController.uploadPaymentProof);
 
 module.exports = router;

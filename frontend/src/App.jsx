@@ -5,6 +5,7 @@ import { FinanceProvider } from './contexts/FinanceContext';
 import { AdminProvider } from './contexts/AdminContext';
 import LoginScreen from './pages/LoginScreen';
 import useInactivityTimer from './hooks/useInactivityTimer';
+import { clearSession, saveSession } from './utils/api';
 
 // Importação das Páginas do Sistema
 import DashboardHome from './pages/DashboardHome';
@@ -43,21 +44,25 @@ function App() {
 
         // Sessão expirada — limpar e exigir novo login
         if (elapsed > SESSION_MAX_AGE_MS) {
-          localStorage.removeItem('yeto_user');
-          localStorage.removeItem('yeto_session_time');
+          clearSession();
           return null;
         }
 
-        return JSON.parse(savedUser);
+        const parsedUser = JSON.parse(savedUser);
+        if (!parsedUser.token && !localStorage.getItem('yeto_token')) {
+          clearSession();
+          return null;
+        }
+
+        return parsedUser;
       } catch (err) {
-        localStorage.removeItem('yeto_user');
-        localStorage.removeItem('yeto_session_time');
+        clearSession();
       }
     }
 
     // Se não houver timestamp, a sessão é inválida (legado ou corrompida)
     if (savedUser && !sessionTimestamp) {
-      localStorage.removeItem('yeto_user');
+      clearSession();
       return null;
     }
 
@@ -74,8 +79,7 @@ function App() {
 
   // Logout centralizado — usado tanto pelo botão como pelo timer de inatividade
   const handleLogout = useCallback(() => {
-    localStorage.removeItem('yeto_user');
-    localStorage.removeItem('yeto_session_time');
+    clearSession();
     setShowDashboard(false);
     setUser(null);
     setIsAdmin(false);
@@ -108,7 +112,7 @@ function App() {
 
   if (showDashboard && user) {
     return (
-      <AdminProvider>
+      <AdminProvider isAdmin={isAdmin}>
         <FinanceProvider userId={user.id}>
           <DashboardLayout 
             activeTab={activeTab} 
@@ -125,8 +129,7 @@ function App() {
 
   return (
     <LoginScreen onLogin={(userData) => {
-      localStorage.setItem('yeto_user', JSON.stringify(userData));
-      localStorage.setItem('yeto_session_time', String(Date.now()));
+      saveSession(userData);
       setUser(userData);
       setIsAdmin(userData.plan_type === 'admin');
       setActiveTab(userData.plan_type === 'admin' ? 'admin_dashboard' : 'dashboard');
@@ -136,4 +139,3 @@ function App() {
 }
 
 export default App;
-

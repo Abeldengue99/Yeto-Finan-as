@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { useFinance } from '../../contexts/FinanceContext';
+import { apiFetch } from '../../utils/api';
 
 export default function AdminSettings() {
   const { planPrices, setPlanPrices, systemSettings, setSystemSettings, addLog } = useAdmin();
@@ -59,12 +60,10 @@ export default function AdminSettings() {
       setIsSendingEmail(true);
       try {
         // No Yeto o admin login usa mock no Node/PG, adaptamos a chamada
-        const response = await fetch('http://localhost:5000/api/admin/promotions', {
+        const response = await apiFetch('/api/admin/promotions', {
           method: 'POST',
           headers: { 
-            'Content-Type': 'application/json',
-            // Autenticação básica ou bearer
-            'Authorization': 'Bearer admin-token'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({ subject: emailSubject, htmlContent: emailContent })
         });

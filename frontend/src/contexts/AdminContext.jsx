@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { apiFetch } from '../utils/api';
 
 const AdminContext = createContext();
 
@@ -6,7 +7,7 @@ export function useAdmin() {
   return useContext(AdminContext);
 }
 
-export function AdminProvider({ children }) {
+export function AdminProvider({ children, isAdmin = false }) {
   const [users, setUsers] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
   const [planPrices, setPlanPrices] = useState({
@@ -30,10 +31,10 @@ export function AdminProvider({ children }) {
   const loadAdminData = async () => {
     try {
       const [statsRes, usersRes, logsRes, paymentsRes] = await Promise.all([
-        fetch('http://localhost:5000/api/admin/stats'),
-        fetch('http://localhost:5000/api/admin/users'),
-        fetch('http://localhost:5000/api/admin/logs'),
-        fetch('http://localhost:5000/api/admin/payments/pending')
+        apiFetch('/api/admin/stats'),
+        apiFetch('/api/admin/users'),
+        apiFetch('/api/admin/logs'),
+        apiFetch('/api/admin/payments/pending')
       ]);
 
       if (statsRes.ok) {
@@ -93,8 +94,10 @@ export function AdminProvider({ children }) {
   };
 
   React.useEffect(() => {
-    loadAdminData();
-  }, []);
+    if (isAdmin) {
+      loadAdminData();
+    }
+  }, [isAdmin]);
 
   const getStats = () => stats;
 
@@ -113,7 +116,7 @@ export function AdminProvider({ children }) {
     if (!payment) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/payments/${paymentId}/approve`, {
+      const response = await apiFetch(`/api/admin/payments/${paymentId}/approve`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -139,7 +142,7 @@ export function AdminProvider({ children }) {
     if (!payment) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/payments/${paymentId}/reject`, {
+      const response = await apiFetch(`/api/admin/payments/${paymentId}/reject`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' }
       });

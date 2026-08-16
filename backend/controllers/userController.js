@@ -17,6 +17,11 @@ const updateProfile = async (req, res) => {
 
     // Se houver uma nova senha, também a atualiza
     if (newPassword && newPassword.trim() !== '') {
+      const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{10,}$/;
+      if (!passwordRegex.test(newPassword)) {
+        return res.status(400).json({ error: 'A senha deve ter pelo menos 10 caracteres, incluir uma letra, um numero e um caractere especial.' });
+      }
+
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(newPassword, salt);
       updateQuery += ', password_hash = $4';

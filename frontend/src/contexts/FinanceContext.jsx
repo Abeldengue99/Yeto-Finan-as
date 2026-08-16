@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 
 const FinanceContext = createContext();
 const FREE_TRIAL_DAYS = 30;
@@ -81,7 +82,7 @@ export function FinanceProvider({ children, userId }) {
   const fetchUserData = async (uid) => {
     if (!uid) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/finances/${uid}`);
+      const res = await apiFetch(`/api/finances/${uid}`);
       const data = await res.json();
       
       setContas(data.accounts || []);
@@ -260,7 +261,7 @@ export function FinanceProvider({ children, userId }) {
   const atualizarUsuario = async (dados) => {
     if (!userId) return;
     try {
-      const response = await fetch('http://localhost:5000/api/users/profile', {
+      const response = await apiFetch('/api/users/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -324,7 +325,7 @@ export function FinanceProvider({ children, userId }) {
     if (!userId) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/finances/transaction', {
+      const response = await apiFetch('/api/finances/transaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -387,7 +388,7 @@ export function FinanceProvider({ children, userId }) {
     const valorLiquido = valorOriginal - valorCofre;
 
     try {
-      const response = await fetch('http://localhost:5000/api/finances/transaction', {
+      const response = await apiFetch('/api/finances/transaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -498,7 +499,7 @@ export function FinanceProvider({ children, userId }) {
     if (!userId) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/finances/account', {
+      const response = await apiFetch('/api/finances/account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -538,7 +539,7 @@ export function FinanceProvider({ children, userId }) {
   const adicionarDivida = async (novaDivida) => {
     if (!userId) return;
     try {
-      const res = await fetch('http://localhost:5000/api/finances/debt', {
+      const res = await apiFetch('/api/finances/debt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -573,7 +574,7 @@ export function FinanceProvider({ children, userId }) {
 
   const liquidarDivida = async (dividaId, contaId) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/finances/debt/${dividaId}/pay`, {
+      const res = await apiFetch(`/api/finances/debt/${dividaId}/pay`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountId: contaId })
@@ -610,7 +611,7 @@ export function FinanceProvider({ children, userId }) {
   const adicionarKixikila = async (novaKixikila) => {
     if (!userId) return;
     try {
-      const res = await fetch('http://localhost:5000/api/finances/kixikila', {
+      const res = await apiFetch('/api/finances/kixikila', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -646,7 +647,7 @@ export function FinanceProvider({ children, userId }) {
 
   const receberMaoKixikila = async (kixikilaId, contaId) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/finances/kixikila/${kixikilaId}/pay`, {
+      const res = await apiFetch(`/api/finances/kixikila/${kixikilaId}/pay`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountId: contaId })
@@ -677,7 +678,7 @@ export function FinanceProvider({ children, userId }) {
   const adicionarProjeto = async (novoProjeto) => {
     if (!userId) return;
     try {
-      const res = await fetch('http://localhost:5000/api/finances/project', {
+      const res = await apiFetch('/api/finances/project', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -711,7 +712,7 @@ export function FinanceProvider({ children, userId }) {
 
   const depositarProjeto = async (projetoId, contaId, montante) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/finances/project/${projetoId}/fund`, {
+      const res = await apiFetch(`/api/finances/project/${projetoId}/fund`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountId: contaId, amount: montante })
@@ -753,7 +754,7 @@ export function FinanceProvider({ children, userId }) {
   const adicionarDivisa = async (novaDivisa) => {
     if (!userId) return;
     try {
-      const res = await fetch('http://localhost:5000/api/finances/currency', {
+      const res = await apiFetch('/api/finances/currency', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -798,7 +799,7 @@ export function FinanceProvider({ children, userId }) {
   const adicionarPagamentoFixo = async (novo) => {
     if (!userId) return;
     try {
-      const res = await fetch('http://localhost:5000/api/finances/fixed-payment', {
+      const res = await apiFetch('/api/finances/fixed-payment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -838,7 +839,7 @@ export function FinanceProvider({ children, userId }) {
     }
 
     try {
-      const res = await fetch(`http://localhost:5000/api/finances/fixed-payment/${id}/pay`, {
+      const res = await apiFetch(`/api/finances/fixed-payment/${id}/pay`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accountId: targetAccountId })
@@ -873,7 +874,7 @@ export function FinanceProvider({ children, userId }) {
   const resgatarPremium = async () => {
     if (!userId) return;
     try {
-      const res = await fetch('http://localhost:5000/api/gamification/redeem', {
+      const res = await apiFetch('/api/gamification/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId })
@@ -911,7 +912,7 @@ export function FinanceProvider({ children, userId }) {
     }
   };
 
-  const editarTransacao = (id, dados) => handleBackendOp('editar transação', () => fetch(`http://localhost:5000/api/finances/transaction/${id}`, {
+  const editarTransacao = (id, dados) => handleBackendOp('editar transação', () => apiFetch(`/api/finances/transaction/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       description: dados.descricao,
@@ -921,9 +922,9 @@ export function FinanceProvider({ children, userId }) {
     })
   }), 'Transação atualizada!');
 
-  const eliminarTransacao = (id) => handleBackendOp('eliminar transação', () => fetch(`http://localhost:5000/api/finances/transaction/${id}`, { method: 'DELETE' }), 'Transação eliminada!');
+  const eliminarTransacao = (id) => handleBackendOp('eliminar transação', () => apiFetch(`/api/finances/transaction/${id}`, { method: 'DELETE' }), 'Transação eliminada!');
 
-  const editarConta = (id, dados) => handleBackendOp('editar conta', () => fetch(`http://localhost:5000/api/finances/account/${id}`, {
+  const editarConta = (id, dados) => handleBackendOp('editar conta', () => apiFetch(`/api/finances/account/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: dados.nome,
@@ -933,9 +934,9 @@ export function FinanceProvider({ children, userId }) {
     })
   }), 'Conta atualizada!');
 
-  const eliminarConta = (id) => handleBackendOp('eliminar conta', () => fetch(`http://localhost:5000/api/finances/account/${id}`, { method: 'DELETE' }), 'Conta eliminada!');
+  const eliminarConta = (id) => handleBackendOp('eliminar conta', () => apiFetch(`/api/finances/account/${id}`, { method: 'DELETE' }), 'Conta eliminada!');
 
-  const editarDivida = (id, dados) => handleBackendOp('editar dívida', () => fetch(`http://localhost:5000/api/finances/debt/${id}`, {
+  const editarDivida = (id, dados) => handleBackendOp('editar dívida', () => apiFetch(`/api/finances/debt/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       person_name: dados.pessoa,
@@ -946,9 +947,9 @@ export function FinanceProvider({ children, userId }) {
     })
   }), 'Dívida atualizada!');
 
-  const eliminarDivida = (id) => handleBackendOp('eliminar dívida', () => fetch(`http://localhost:5000/api/finances/debt/${id}`, { method: 'DELETE' }), 'Dívida eliminada!');
+  const eliminarDivida = (id) => handleBackendOp('eliminar dívida', () => apiFetch(`/api/finances/debt/${id}`, { method: 'DELETE' }), 'Dívida eliminada!');
 
-  const editarPagamentoFixo = (id, dados) => handleBackendOp('editar pagamento fixo', () => fetch(`http://localhost:5000/api/finances/fixed-payment/${id}`, {
+  const editarPagamentoFixo = (id, dados) => handleBackendOp('editar pagamento fixo', () => apiFetch(`/api/finances/fixed-payment/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: dados.nome,
@@ -958,9 +959,9 @@ export function FinanceProvider({ children, userId }) {
     })
   }), 'Pagamento fixo atualizado!');
 
-  const eliminarPagamentoFixo = (id) => handleBackendOp('eliminar pagamento fixo', () => fetch(`http://localhost:5000/api/finances/fixed-payment/${id}`, { method: 'DELETE' }), 'Pagamento fixo eliminado!');
+  const eliminarPagamentoFixo = (id) => handleBackendOp('eliminar pagamento fixo', () => apiFetch(`/api/finances/fixed-payment/${id}`, { method: 'DELETE' }), 'Pagamento fixo eliminado!');
 
-  const editarProjeto = (id, dados) => handleBackendOp('editar projeto', () => fetch(`http://localhost:5000/api/finances/project/${id}`, {
+  const editarProjeto = (id, dados) => handleBackendOp('editar projeto', () => apiFetch(`/api/finances/project/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: dados.nome,
@@ -970,9 +971,9 @@ export function FinanceProvider({ children, userId }) {
     })
   }), 'Projeto atualizado!');
 
-  const eliminarProjeto = (id) => handleBackendOp('eliminar projeto', () => fetch(`http://localhost:5000/api/finances/project/${id}`, { method: 'DELETE' }), 'Projeto eliminado!');
+  const eliminarProjeto = (id) => handleBackendOp('eliminar projeto', () => apiFetch(`/api/finances/project/${id}`, { method: 'DELETE' }), 'Projeto eliminado!');
 
-  const editarKixikila = (id, dados) => handleBackendOp('editar kixikila', () => fetch(`http://localhost:5000/api/finances/kixikila/${id}`, {
+  const editarKixikila = (id, dados) => handleBackendOp('editar kixikila', () => apiFetch(`/api/finances/kixikila/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       name: dados.nome,
@@ -982,7 +983,7 @@ export function FinanceProvider({ children, userId }) {
     })
   }), 'Kixikila atualizada!');
 
-  const eliminarKixikila = (id) => handleBackendOp('eliminar kixikila', () => fetch(`http://localhost:5000/api/finances/kixikila/${id}`, { method: 'DELETE' }), 'Kixikila eliminada!');
+  const eliminarKixikila = (id) => handleBackendOp('eliminar kixikila', () => apiFetch(`/api/finances/kixikila/${id}`, { method: 'DELETE' }), 'Kixikila eliminada!');
 
   // Mesclar despesas e receitas para o histórico geral ordenado por data
   const movimentos = [...despesas, ...receitas].sort((a, b) => new Date(b.data) - new Date(a.data));

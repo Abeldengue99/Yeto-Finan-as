@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const { sendVerificationCode, sendPasswordReset } = require('../services/emailService');
+const { signSession } = require('../middleware/auth');
 
 /**
  * Gera um código numérico aleatório de 6 dígitos
@@ -8,6 +9,20 @@ const { sendVerificationCode, sendPasswordReset } = require('../services/emailSe
 const generateCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
+
+const buildSessionResponse = (user) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  plan_type: user.plan_type,
+  yeto_points: user.yeto_points || 0,
+  current_level: user.current_level || 1,
+  avatar_url: user.avatar_url,
+  occupation: user.occupation,
+  created_at: user.created_at,
+  plan_expires_at: user.plan_expires_at,
+  token: signSession(user)
+});
 
 const login = async (req, res) => {
   const { email, password } = req.body;
@@ -74,19 +89,19 @@ const login = async (req, res) => {
       return res.status(401).json({ error: 'Credenciais inválidas.' });
     }
 
+    if (user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
+      const expiryResult = await pool.query(
+        "UPDATE users SET plan_expires_at = created_at + INTERVAL '30 days' WHERE id = $1 AND plan_expires_at IS NULL RETURNING plan_expires_at",
+        [user.id]
+      );
+
+      if (expiryResult.rows[0]) {
+        user.plan_expires_at = expiryResult.rows[0].plan_expires_at;
+      }
+    }
+
     // Se a senha for correta, devolve os dados essenciais (sem enviar a senha de volta!)
-    res.status(200).json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      plan_type: user.plan_type,
-      yeto_points: user.yeto_points,
-      current_level: user.current_level,
-      avatar_url: user.avatar_url,
-      occupation: user.occupation,
-      created_at: user.created_at,
-      plan_expires_at: user.plan_expires_at
-    });
+    res.status(200).json(buildSessionResponse(user));
 
   } catch (error) {
     console.error('Erro no login:', error);
@@ -183,18 +198,7 @@ const verifyEmail = async (req, res) => {
     );
 
     // Retorna dados do utilizador para auto-login
-    res.status(200).json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      plan_type: user.plan_type,
-      yeto_points: user.yeto_points || 0,
-      current_level: user.current_level || 1,
-      avatar_url: user.avatar_url,
-      occupation: user.occupation,
-      created_at: user.created_at,
-      plan_expires_at: user.plan_expires_at
-    });
+    res.status(200).json(buildSessionResponse(user));
 
   } catch (error) {
     console.error('Erro na verificação de email:', error);

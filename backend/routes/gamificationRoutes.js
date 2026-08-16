@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const gamificationController = require('../controllers/gamificationController');
+const { authenticate, requireSelfBody } = require('../middleware/auth');
 
-// POST /api/gamification/redeem
-router.post('/redeem', gamificationController.redeemPremium);
+router.post('/redeem', authenticate, requireSelfBody('userId'), gamificationController.redeemPremium);
 
 module.exports = router;

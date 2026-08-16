@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
 import { useAdmin } from '../contexts/AdminContext';
+import { apiFetch } from '../utils/api';
 
 export default function Planos({ user }) {
   const [showModal, setShowModal] = useState(false);
@@ -22,7 +23,7 @@ export default function Planos({ user }) {
 
     const checkPaymentStatus = async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/finances/payment-status/${user.id}`);
+        const res = await apiFetch(`/api/finances/payment-status/${user.id}`);
         if (!res.ok) return;
         const data = await res.json();
         
@@ -75,7 +76,7 @@ export default function Planos({ user }) {
     setIsSubmitting(true);
     setMessage('');
     try {
-      const res = await fetch('http://localhost:5000/api/finances/payment-proof', {
+      const res = await apiFetch('/api/finances/payment-proof', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, proofImage, planRequested: selectedPlan })

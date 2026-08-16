@@ -1,5 +1,58 @@
 const pool = require('../config/database');
 
+const OWNED_TABLES = new Set([
+  'accounts',
+  'transactions',
+  'debts',
+  'fixed_payments',
+  'projects',
+  'kixikila_groups',
+  'foreign_currency'
+]);
+
+function isAdminRequest(req) {
+  return req.user?.plan_type === 'admin';
+}
+
+function getRequestUserId(req, fallbackUserId) {
+  return isAdminRequest(req) ? fallbackUserId : req.user?.id;
+}
+
+async function getOwnedResource(db, table, id, req) {
+  if (!OWNED_TABLES.has(table)) {
+    throw new Error('Tabela nao autorizada para verificacao de propriedade.');
+  }
+
+  const params = [id];
+  let query = `SELECT * FROM ${table} WHERE id = $1`;
+
+  if (!isAdminRequest(req)) {
+    query += ' AND user_id = $2';
+    params.push(req.user.id);
+  }
+
+  const result = await db.query(query, params);
+  return result.rows[0] || null;
+}
+
+async function ensureAccountOwnership(db, accountId, ownerUserId) {
+  if (!accountId || !ownerUserId) return false;
+
+  const result = await db.query(
+    'SELECT id FROM accounts WHERE id = $1 AND user_id = $2',
+    [accountId, ownerUserId]
+  );
+
+  return result.rows.length > 0;
+}
+
+function appendOwnerFilter(req, params) {
+  if (isAdminRequest(req)) return '';
+
+  params.push(req.user.id);
+  return ` AND user_id = $${params.length}`;
+}
+
 const getUserFinances = async (req, res) => {
   const { userId } = req.params;
 
@@ -11,7 +64,11 @@ const getUserFinances = async (req, res) => {
     );
     const user = userRes.rows[0];
 
-    if (user && user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
+    if (!user) {
+      return res.status(404).json({ error: 'Utilizador nao encontrado.' });
+    }
+
+    if (user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
       const expiryResult = await pool.query(
         "UPDATE users SET plan_expires_at = created_at + INTERVAL '30 days' WHERE id = $1 AND plan_expires_at IS NULL RETURNING plan_expires_at",
         [userId]
@@ -127,7 +184,8 @@ const getUserFinances = async (req, res) => {
 };
 
 const createAccount = async (req, res) => {
-  const { userId, name, type, balance, currency, color_code, iban } = req.body;
+  let { userId, name, type, balance, currency, color_code, iban } = req.body;
+  userId = getRequestUserId(req, userId);
 
   try {
     const result = await pool.query(
@@ -143,12 +201,19 @@ const createAccount = async (req, res) => {
 };
 
 const createTransaction = async (req, res) => {
-  const { userId, accountId, type, category, description, amount, transaction_date } = req.body;
+  let { userId, accountId, type, category, description, amount, transaction_date } = req.body;
+  userId = getRequestUserId(req, userId);
 
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN'); // Start transaction for safety
+
+    const ownsAccount = await ensureAccountOwnership(client, accountId, userId);
+    if (!ownsAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+    }
 
     // 1. Inserir a transação
     const transResult = await client.query(
@@ -162,8 +227,8 @@ const createTransaction = async (req, res) => {
     // 2. Atualizar o saldo da conta
     const balanceAdjustment = type === 'income' ? amount : -amount;
     await client.query(
-      `UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [balanceAdjustment, accountId]
+      `UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+      [balanceAdjustment, accountId, userId]
     );
 
     await client.query('COMMIT');
@@ -178,7 +243,8 @@ const createTransaction = async (req, res) => {
 };
 
 const createDebt = async (req, res) => {
-  const { userId, person_name, type, amount, due_date, purpose } = req.body;
+  let { userId, person_name, type, amount, due_date, purpose } = req.body;
+  userId = getRequestUserId(req, userId);
   try {
     const result = await pool.query(
       `INSERT INTO debts (user_id, person_name, type, amount, due_date, purpose) 
@@ -200,18 +266,26 @@ const payDebt = async (req, res) => {
   try {
     await client.query('BEGIN');
     
-    const debtRes = await client.query('SELECT * FROM debts WHERE id = $1', [id]);
-    if (debtRes.rows.length === 0) throw new Error('Dívida não encontrada.');
-    const debt = debtRes.rows[0];
+    const debt = await getOwnedResource(client, 'debts', id, req);
+    if (!debt) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Dívida não encontrada.' });
+    }
+
+    const ownsAccount = await ensureAccountOwnership(client, accountId, debt.user_id);
+    if (!ownsAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+    }
 
     // Atualizar estado da dívida
-    await client.query('UPDATE debts SET is_paid = true WHERE id = $1', [id]);
+    await client.query('UPDATE debts SET is_paid = true WHERE id = $1 AND user_id = $2', [id, debt.user_id]);
 
     // Atualizar saldo da conta: se eu pago uma dívida a pagar, sai dinheiro. Se recebo, entra dinheiro.
     const balanceAdjustment = debt.type === 'to_pay' ? -Number(debt.amount) : Number(debt.amount);
     await client.query(
-      `UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [balanceAdjustment, accountId]
+      `UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+      [balanceAdjustment, accountId, debt.user_id]
     );
 
     // Registar a transação
@@ -233,7 +307,8 @@ const payDebt = async (req, res) => {
 };
 
 const createFixedPayment = async (req, res) => {
-  const { userId, name, category, amount, due_day } = req.body;
+  let { userId, name, category, amount, due_day } = req.body;
+  userId = getRequestUserId(req, userId);
   try {
     const result = await pool.query(
       `INSERT INTO fixed_payments (user_id, name, category, amount, due_day) 
@@ -255,17 +330,25 @@ const payFixedPayment = async (req, res) => {
   try {
     await client.query('BEGIN');
     
-    const fixRes = await client.query('SELECT * FROM fixed_payments WHERE id = $1', [id]);
-    if (fixRes.rows.length === 0) throw new Error('Pagamento fixo não encontrado.');
-    const fixed = fixRes.rows[0];
+    const fixed = await getOwnedResource(client, 'fixed_payments', id, req);
+    if (!fixed) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pagamento fixo não encontrado.' });
+    }
+
+    const ownsAccount = await ensureAccountOwnership(client, accountId, fixed.user_id);
+    if (!ownsAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+    }
 
     // Marcar como pago este mês
-    await client.query('UPDATE fixed_payments SET is_paid_this_month = true WHERE id = $1', [id]);
+    await client.query('UPDATE fixed_payments SET is_paid_this_month = true WHERE id = $1 AND user_id = $2', [id, fixed.user_id]);
 
     // Atualizar saldo da conta
     await client.query(
-      `UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [fixed.amount, accountId]
+      `UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+      [fixed.amount, accountId, fixed.user_id]
     );
 
     // Registar a transação
@@ -287,7 +370,8 @@ const payFixedPayment = async (req, res) => {
 };
 
 const createKixikila = async (req, res) => {
-  const { userId, name, hand_value, quota_value, periodicity, start_date } = req.body;
+  let { userId, name, hand_value, quota_value, periodicity, start_date } = req.body;
+  userId = getRequestUserId(req, userId);
   try {
     const result = await pool.query(
       `INSERT INTO kixikila_groups (user_id, name, hand_value, quota_value, periodicity, start_date) 
@@ -309,14 +393,22 @@ const receiveKixikilaHand = async (req, res) => {
   try {
     await client.query('BEGIN');
     
-    const kixRes = await client.query('SELECT * FROM kixikila_groups WHERE id = $1', [id]);
-    if (kixRes.rows.length === 0) throw new Error('Kixikila não encontrada.');
-    const kixikila = kixRes.rows[0];
+    const kixikila = await getOwnedResource(client, 'kixikila_groups', id, req);
+    if (!kixikila) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Kixikila não encontrada.' });
+    }
+
+    const ownsAccount = await ensureAccountOwnership(client, accountId, kixikila.user_id);
+    if (!ownsAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+    }
 
     // Atualizar saldo da conta
     await client.query(
-      `UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [kixikila.hand_value, accountId]
+      `UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+      [kixikila.hand_value, accountId, kixikila.user_id]
     );
 
     // Registar a transação
@@ -338,7 +430,8 @@ const receiveKixikilaHand = async (req, res) => {
 };
 
 const createProject = async (req, res) => {
-  const { userId, name, category, target_amount, saved_amount, deadline } = req.body;
+  let { userId, name, category, target_amount, saved_amount, deadline } = req.body;
+  userId = getRequestUserId(req, userId);
   try {
     const result = await pool.query(
       `INSERT INTO projects (user_id, name, category, target_amount, saved_amount, deadline) 
@@ -353,12 +446,19 @@ const createProject = async (req, res) => {
 };
 
 const createForeignCurrency = async (req, res) => {
-  const { userId, accountId, currency, amount_bought, exchange_rate } = req.body;
+  let { userId, accountId, currency, amount_bought, exchange_rate } = req.body;
+  userId = getRequestUserId(req, userId);
   const total_spent_aoa = amount_bought * exchange_rate;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    const ownsAccount = await ensureAccountOwnership(client, accountId, userId);
+    if (!ownsAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+    }
     
     // Inserir compra de divisas
     const result = await client.query(
@@ -369,8 +469,8 @@ const createForeignCurrency = async (req, res) => {
 
     // Deduzir da conta
     await client.query(
-      `UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [total_spent_aoa, accountId]
+      `UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+      [total_spent_aoa, accountId, userId]
     );
 
     // Registar a transação
@@ -399,20 +499,28 @@ const fundProject = async (req, res) => {
   try {
     await client.query('BEGIN');
     
-    const projRes = await client.query('SELECT * FROM projects WHERE id = $1', [id]);
-    if (projRes.rows.length === 0) throw new Error('Projeto não encontrado.');
-    const project = projRes.rows[0];
+    const project = await getOwnedResource(client, 'projects', id, req);
+    if (!project) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Projeto não encontrado.' });
+    }
+
+    const ownsAccount = await ensureAccountOwnership(client, accountId, project.user_id);
+    if (!ownsAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nao pertence ao utilizador autenticado.' });
+    }
 
     // Atualizar valor guardado
     await client.query(
-      `UPDATE projects SET saved_amount = saved_amount + $1 WHERE id = $2`,
-      [amount, id]
+      `UPDATE projects SET saved_amount = saved_amount + $1 WHERE id = $2 AND user_id = $3`,
+      [amount, id, project.user_id]
     );
 
     // Deduzir da conta
     await client.query(
-      `UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [amount, accountId]
+      `UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3`,
+      [amount, accountId, project.user_id]
     );
 
     // Registar a transação
@@ -435,7 +543,8 @@ const fundProject = async (req, res) => {
 
 
 const uploadPaymentProof = async (req, res) => {
-  const { userId, proofImage, planRequested } = req.body;
+  let { userId, proofImage, planRequested } = req.body;
+  userId = getRequestUserId(req, userId);
   try {
     if (!userId || !proofImage) {
       return res.status(400).json({ error: 'Faltam dados do comprovativo.' });
@@ -491,22 +600,24 @@ const updateTransaction = async (req, res) => {
   try {
     await client.query('BEGIN');
     // Get old transaction to reverse balance
-    const oldRes = await client.query('SELECT * FROM transactions WHERE id = $1', [id]);
-    if (oldRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Transação não encontrada.' }); }
-    const old = oldRes.rows[0];
+    const old = await getOwnedResource(client, 'transactions', id, req);
+    if (!old) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Transação não encontrada.' });
+    }
     const oldAmount = Number(old.amount);
     const newAmount = Number(amount);
 
     // Reverse old balance impact, apply new
     if (old.type === 'expense') {
-      await client.query('UPDATE accounts SET balance = balance + $1 - $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [oldAmount, newAmount, old.account_id]);
+      await client.query('UPDATE accounts SET balance = balance + $1 - $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND user_id = $4', [oldAmount, newAmount, old.account_id, old.user_id]);
     } else {
-      await client.query('UPDATE accounts SET balance = balance - $1 + $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3', [oldAmount, newAmount, old.account_id]);
+      await client.query('UPDATE accounts SET balance = balance - $1 + $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND user_id = $4', [oldAmount, newAmount, old.account_id, old.user_id]);
     }
 
     const result = await client.query(
-      'UPDATE transactions SET description = $1, amount = $2, category = $3, transaction_date = $4 WHERE id = $5 RETURNING *',
-      [description, newAmount, category, transaction_date, id]
+      'UPDATE transactions SET description = $1, amount = $2, category = $3, transaction_date = $4 WHERE id = $5 AND user_id = $6 RETURNING *',
+      [description, newAmount, category, transaction_date, id, old.user_id]
     );
     await client.query('COMMIT');
     res.json(result.rows[0]);
@@ -524,18 +635,20 @@ const deleteTransaction = async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const oldRes = await client.query('SELECT * FROM transactions WHERE id = $1', [id]);
-    if (oldRes.rows.length === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Transação não encontrada.' }); }
-    const old = oldRes.rows[0];
+    const old = await getOwnedResource(client, 'transactions', id, req);
+    if (!old) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Transação não encontrada.' });
+    }
 
     // Reverse balance impact
     if (old.type === 'expense') {
-      await client.query('UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [Number(old.amount), old.account_id]);
+      await client.query('UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3', [Number(old.amount), old.account_id, old.user_id]);
     } else {
-      await client.query('UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [Number(old.amount), old.account_id]);
+      await client.query('UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3', [Number(old.amount), old.account_id, old.user_id]);
     }
 
-    await client.query('DELETE FROM transactions WHERE id = $1', [id]);
+    await client.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [id, old.user_id]);
     await client.query('COMMIT');
     res.json({ message: 'Transação eliminada com sucesso.' });
   } catch (error) {
@@ -552,9 +665,11 @@ const updateAccount = async (req, res) => {
   const { id } = req.params;
   const { name, type, iban, color_code } = req.body;
   try {
+    const params = [name, type, iban || null, color_code || '#373392', id];
+    const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      'UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING *',
-      [name, type, iban || null, color_code || '#373392', id]
+      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5${ownerFilter} RETURNING *`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
     res.json(result.rows[0]);
@@ -567,7 +682,9 @@ const updateAccount = async (req, res) => {
 const deleteAccount = async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM accounts WHERE id = $1 RETURNING id', [id]);
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM accounts WHERE id = $1${ownerFilter} RETURNING id`, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
     res.json({ message: 'Conta eliminada com sucesso.' });
   } catch (error) {
@@ -581,9 +698,11 @@ const updateDebt = async (req, res) => {
   const { id } = req.params;
   const { person_name, type, amount, due_date, purpose } = req.body;
   try {
+    const params = [person_name, type, Number(amount), due_date, purpose, id];
+    const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      'UPDATE debts SET person_name = $1, type = $2, amount = $3, due_date = $4, purpose = $5 WHERE id = $6 RETURNING *',
-      [person_name, type, Number(amount), due_date, purpose, id]
+      `UPDATE debts SET person_name = $1, type = $2, amount = $3, due_date = $4, purpose = $5 WHERE id = $6${ownerFilter} RETURNING *`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Dívida não encontrada.' });
     res.json(result.rows[0]);
@@ -596,7 +715,9 @@ const updateDebt = async (req, res) => {
 const deleteDebt = async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM debts WHERE id = $1 RETURNING id', [id]);
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM debts WHERE id = $1${ownerFilter} RETURNING id`, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Dívida não encontrada.' });
     res.json({ message: 'Dívida eliminada com sucesso.' });
   } catch (error) {
@@ -610,9 +731,11 @@ const updateFixedPayment = async (req, res) => {
   const { id } = req.params;
   const { name, amount, due_day, category } = req.body;
   try {
+    const params = [name, Number(amount), Number(due_day), category, id];
+    const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      'UPDATE fixed_payments SET name = $1, amount = $2, due_day = $3, category = $4 WHERE id = $5 RETURNING *',
-      [name, Number(amount), Number(due_day), category, id]
+      `UPDATE fixed_payments SET name = $1, amount = $2, due_day = $3, category = $4 WHERE id = $5${ownerFilter} RETURNING *`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Pagamento fixo não encontrado.' });
     res.json(result.rows[0]);
@@ -625,7 +748,9 @@ const updateFixedPayment = async (req, res) => {
 const deleteFixedPayment = async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM fixed_payments WHERE id = $1 RETURNING id', [id]);
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM fixed_payments WHERE id = $1${ownerFilter} RETURNING id`, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Pagamento fixo não encontrado.' });
     res.json({ message: 'Pagamento fixo eliminado com sucesso.' });
   } catch (error) {
@@ -639,9 +764,11 @@ const updateProject = async (req, res) => {
   const { id } = req.params;
   const { name, category, target_amount, deadline } = req.body;
   try {
+    const params = [name, category, Number(target_amount), deadline || null, id];
+    const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      'UPDATE projects SET name = $1, category = $2, target_amount = $3, deadline = $4 WHERE id = $5 RETURNING *',
-      [name, category, Number(target_amount), deadline || null, id]
+      `UPDATE projects SET name = $1, category = $2, target_amount = $3, deadline = $4 WHERE id = $5${ownerFilter} RETURNING *`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Projeto não encontrado.' });
     res.json(result.rows[0]);
@@ -654,7 +781,9 @@ const updateProject = async (req, res) => {
 const deleteProject = async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM projects WHERE id = $1 RETURNING id', [id]);
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM projects WHERE id = $1${ownerFilter} RETURNING id`, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Projeto não encontrado.' });
     res.json({ message: 'Projeto eliminado com sucesso.' });
   } catch (error) {
@@ -668,9 +797,11 @@ const updateKixikila = async (req, res) => {
   const { id } = req.params;
   const { name, periodicity, quota_value, hand_value, start_date } = req.body;
   try {
+    const params = [name, periodicity, Number(quota_value), Number(hand_value), start_date || null, id];
+    const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      'UPDATE kixikila_groups SET name = $1, periodicity = $2, quota_value = $3, hand_value = $4, start_date = $5 WHERE id = $6 RETURNING *',
-      [name, periodicity, Number(quota_value), Number(hand_value), start_date || null, id]
+      `UPDATE kixikila_groups SET name = $1, periodicity = $2, quota_value = $3, hand_value = $4, start_date = $5 WHERE id = $6${ownerFilter} RETURNING *`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Kixikila não encontrada.' });
     res.json(result.rows[0]);
@@ -683,7 +814,9 @@ const updateKixikila = async (req, res) => {
 const deleteKixikila = async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query('DELETE FROM kixikila_groups WHERE id = $1 RETURNING id', [id]);
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM kixikila_groups WHERE id = $1${ownerFilter} RETURNING id`, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Kixikila não encontrada.' });
     res.json({ message: 'Kixikila eliminada com sucesso.' });
   } catch (error) {
