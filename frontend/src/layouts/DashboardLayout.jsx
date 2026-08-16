@@ -430,7 +430,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
       {/* Modal de Perfil do Utilizador */}
       <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Editar Perfil">
-        <div style={{ textAlign: 'center', marginBottom: '0.5rem', position: 'relative' }}>
+        <div style={{ textAlign: 'center', marginBottom: '0.35rem', position: 'relative' }}>
           <input 
             type="file" 
             id="upload-avatar" 
@@ -440,8 +440,8 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           />
           <label htmlFor="upload-avatar" style={{ cursor: 'pointer', display: 'inline-block', position: 'relative' }}>
             <div style={{ 
-              width: '80px', height: '80px', borderRadius: '50%', background: usuario.foto ? 'transparent' : 'linear-gradient(135deg, #FFB300 0%, #FF8F00 100%)', 
-              color: 'white', fontSize: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', 
+              width: '64px', height: '64px', borderRadius: '50%', background: usuario.foto ? 'transparent' : 'linear-gradient(135deg, #FFB300 0%, #FF8F00 100%)', 
+              color: 'white', fontSize: '1.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', 
               margin: '0 auto', boxShadow: '0 5px 15px rgba(55, 51, 146, 0.2)',
               border: '2px solid white',
               position: 'relative',
@@ -456,8 +456,8 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             {/* Ícone de câmara */}
             <div style={{
               position: 'absolute', bottom: '0', right: '0', background: 'var(--accent-color)', color: 'white',
-              borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '12px', border: '2px solid white', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
+              borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '11px', border: '2px solid white', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
             }}>
               📷
             </div>
@@ -466,30 +466,31 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
         <PlanCountdown
           expiresAt={usuario.plan_expires_at}
+          createdAt={usuario.created_at}
           planType={usuario.plan_type}
           onRenew={goToPlans}
         />
         
-        <form onSubmit={handleProfileSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+        <form onSubmit={handleProfileSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
           <div>
-            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.2rem', fontSize: '0.85rem' }}>Nome (Como quer ser chamado)</label>
-            <input type="text" className="qt-input" defaultValue={usuario.nome} required style={{ padding: '0.5rem 0.8rem' }} />
+            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>Nome (Como quer ser chamado)</label>
+            <input type="text" className="qt-input" defaultValue={usuario.nome} required style={{ padding: '0.42rem 0.75rem' }} />
           </div>
           <div>
-            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.2rem', fontSize: '0.85rem' }}>E-mail Pessoal</label>
-            <input type="email" className="qt-input" value={usuario.email || ''} disabled style={{ padding: '0.5rem 0.8rem', background: '#f2f3f9', cursor: 'not-allowed', color: '#8a8ca3' }} />
+            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>E-mail Pessoal</label>
+            <input type="email" className="qt-input" value={usuario.email || ''} disabled style={{ padding: '0.42rem 0.75rem', background: '#f2f3f9', cursor: 'not-allowed', color: '#8a8ca3' }} />
           </div>
           <div>
-            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.2rem', fontSize: '0.85rem' }}>Profissão / Ocupação</label>
-            <input type="text" className="qt-input" defaultValue={usuario.profissao} placeholder="Ex: Engenheiro, Professor..." style={{ padding: '0.5rem 0.8rem' }} />
+            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>Profissão / Ocupação</label>
+            <input type="text" className="qt-input" defaultValue={usuario.profissao} placeholder="Ex: Engenheiro, Professor..." style={{ padding: '0.42rem 0.75rem' }} />
           </div>
           <div>
-            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.2rem', fontSize: '0.85rem' }}>Nova Senha (Opcional)</label>
-            <input type="password" className="qt-input" placeholder="Deixe em branco para manter" style={{ padding: '0.5rem 0.8rem' }} />
+            <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>Nova Senha (Opcional)</label>
+            <input type="password" className="qt-input" placeholder="Deixe em branco para manter" style={{ padding: '0.42rem 0.75rem' }} />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
-            <button type="submit" className="btn btn-primary btn-pill" style={{ padding: '0.6rem' }}>Guardar Alterações</button>
-            <button type="button" onClick={onLogout} className="btn btn-glass btn-pill" style={{ padding: '0.6rem', color: 'var(--danger-color)', border: '1px solid rgba(255,0,0,0.2)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.35rem' }}>
+            <button type="submit" className="btn btn-primary btn-pill" style={{ padding: '0.52rem' }}>Guardar Alterações</button>
+            <button type="button" onClick={onLogout} className="btn btn-glass btn-pill" style={{ padding: '0.52rem', color: 'var(--danger-color)', border: '1px solid rgba(255,0,0,0.2)' }}>
               🚪 Terminar Sessão
             </button>
           </div>

@@ -17,6 +17,9 @@ export default function Modal({ isOpen, onClose, title, children }) {
         borderRadius: '20px',
         width: '100%',
         maxWidth: '450px',
+        maxHeight: 'calc(100vh - 2rem)',
+        overflowY: 'auto',
+        boxSizing: 'border-box',
         boxShadow: '0 15px 50px rgba(55, 51, 146, 0.2)'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>

@@ -11,6 +11,17 @@ const getUserFinances = async (req, res) => {
     );
     const user = userRes.rows[0];
 
+    if (user && user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
+      const expiryResult = await pool.query(
+        "UPDATE users SET plan_expires_at = created_at + INTERVAL '30 days' WHERE id = $1 AND plan_expires_at IS NULL RETURNING plan_expires_at",
+        [userId]
+      );
+
+      if (expiryResult.rows[0]) {
+        user.plan_expires_at = expiryResult.rows[0].plan_expires_at;
+      }
+    }
+
     // 1. Fetch Accounts
     const accountsResult = await pool.query('SELECT * FROM accounts WHERE user_id = $1', [userId]);
     const accounts = accountsResult.rows;

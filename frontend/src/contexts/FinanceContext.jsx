@@ -1,19 +1,38 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const FinanceContext = createContext();
+const FREE_TRIAL_DAYS = 30;
+
+function getEffectivePlanExpiry(user) {
+  if (!user || user.plan_type === 'admin') return null;
+
+  const explicitExpiry = user.plan_expires_at ? new Date(user.plan_expires_at) : null;
+  if (explicitExpiry && !Number.isNaN(explicitExpiry.getTime())) {
+    return explicitExpiry;
+  }
+
+  if (user.plan_type === 'free' && user.created_at) {
+    const createdAt = new Date(user.created_at);
+    if (!Number.isNaN(createdAt.getTime())) {
+      return new Date(createdAt.getTime() + FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    }
+  }
+
+  return null;
+}
 
 function getPlanAccess(user) {
   if (!user) {
-    return { isPremium: false, trialDaysLeft: 0, planExpired: false };
+    return { isPremium: false, trialDaysLeft: 0, planExpired: false, planExpiresAt: null };
   }
 
   if (user.plan_type === 'admin') {
-    return { isPremium: true, trialDaysLeft: null, planExpired: false };
+    return { isPremium: true, trialDaysLeft: null, planExpired: false, planExpiresAt: null };
   }
 
-  const expiresAt = user.plan_expires_at ? new Date(user.plan_expires_at) : null;
-  const hasValidExpiry = expiresAt && !Number.isNaN(expiresAt.getTime());
-  const isActive = Boolean(hasValidExpiry && expiresAt > new Date());
+  const expiresAt = getEffectivePlanExpiry(user);
+  const hasValidExpiry = Boolean(expiresAt);
+  const isActive = hasValidExpiry && expiresAt > new Date();
   const trialDaysLeft = hasValidExpiry
     ? Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)))
     : 0;
@@ -21,7 +40,8 @@ function getPlanAccess(user) {
   return {
     isPremium: isActive,
     trialDaysLeft,
-    planExpired: hasValidExpiry && !isActive
+    planExpired: hasValidExpiry && !isActive,
+    planExpiresAt: hasValidExpiry ? expiresAt.toISOString() : null
   };
 }
 
@@ -81,7 +101,8 @@ export function FinanceProvider({ children, userId }) {
           mostrarAlerta(
             'Aviso: Plano a Terminar',
             `O seu acesso termina em ${trialDaysLeft} dias. Renove agora para nao perder as funcionalidades Premium.`,
-            'sucesso'
+            'aviso',
+            false
           );
         }
 
@@ -89,7 +110,8 @@ export function FinanceProvider({ children, userId }) {
           mostrarAlerta(
             'Plano Expirado',
             'O seu periodo de acesso terminou. Renove o plano para desbloquear novamente as funcionalidades Premium.',
-            'erro'
+            'erro',
+            false
           );
         }
 
@@ -123,7 +145,7 @@ export function FinanceProvider({ children, userId }) {
           avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
           plan_type: data.user.plan_type,
           created_at: data.user.created_at,
-          plan_expires_at: data.user.plan_expires_at || null,
+          plan_expires_at: planAccess.planExpiresAt,
           trialDaysLeft,
           isPremium,
           planExpired
@@ -164,14 +186,16 @@ export function FinanceProvider({ children, userId }) {
         if (
           prev.isPremium === planAccess.isPremium &&
           prev.planExpired === planAccess.planExpired &&
-          prev.trialDaysLeft === planAccess.trialDaysLeft
+          prev.trialDaysLeft === planAccess.trialDaysLeft &&
+          prev.plan_expires_at === planAccess.planExpiresAt
         ) {
           return prev;
         }
 
         return {
           ...prev,
-          ...planAccess
+          ...planAccess,
+          plan_expires_at: planAccess.planExpiresAt
         };
       });
     }, 60000);
