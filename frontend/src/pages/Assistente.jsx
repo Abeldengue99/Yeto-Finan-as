@@ -18,7 +18,7 @@ function formatDate(value) {
 }
 
 export default function Assistente({ isAdmin = false }) {
-  const { usuario, mostrarAlerta } = useFinance();
+  const { usuario, mostrarAlerta, refreshAssistantSummary } = useFinance();
   const [conversations, setConversations] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [messages, setMessages] = useState([]);
@@ -63,6 +63,7 @@ export default function Assistente({ isAdmin = false }) {
       setConversations(prev => prev.map(item => (
         item.id === conversationId ? { ...item, unread_count: 0 } : item
       )));
+      refreshAssistantSummary?.({ notify: false });
     } catch (error) {
       console.error(error);
       mostrarAlerta('Assistente', error.message, 'erro', false);

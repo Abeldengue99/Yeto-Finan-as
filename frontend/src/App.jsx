@@ -91,7 +91,7 @@ function App() {
 
   const renderContent = () => {
     switch(activeTab) {
-      case 'dashboard': return <DashboardHome isAdmin={isAdmin} />;
+      case 'dashboard': return <DashboardHome isAdmin={isAdmin} setActiveTab={setActiveTab} />;
       case 'bancos': return <Bancos />;
       case 'transacoes': return <Transacoes />;
       case 'dividas': return <Dividas />;
@@ -108,7 +108,7 @@ function App() {
       case 'admin_payments': return <AdminPayments />;
       case 'admin_settings': return <AdminSettings />;
       case 'admin_logs': return <AdminLogs />;
-      default: return <DashboardHome isAdmin={isAdmin} />;
+      default: return <DashboardHome isAdmin={isAdmin} setActiveTab={setActiveTab} />;
     }
   };
 

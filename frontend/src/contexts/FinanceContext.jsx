@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 
 const FinanceContext = createContext();
@@ -65,6 +65,11 @@ export function FinanceProvider({ children, userId }) {
   const [notificacoes, setNotificacoes] = useState([
     { id: 1, titulo: 'Bem-vindo ao Yeto', mensagem: 'O seu centro de controlo financeiro está a ligar-se à base de dados.', lida: false, data: new Date().toISOString() }
   ]);
+
+  const [assistantUnreadCount, setAssistantUnreadCount] = useState(0);
+  const [assistantLatestPreview, setAssistantLatestPreview] = useState(null);
+  const assistantUnreadRef = useRef(0);
+  const assistantInitialLoadRef = useRef(true);
 
   // Estados Globais
   const [contas, setContas] = useState([]);
@@ -296,11 +301,38 @@ export function FinanceProvider({ children, userId }) {
     }
   };
 
-  const adicionarNotificacao = (titulo, mensagem) => {
+  const adicionarNotificacao = (titulo, mensagem, tab = null) => {
     setNotificacoes(prev => [
-      { id: Date.now(), titulo, mensagem, lida: false, data: new Date().toISOString() },
+      { id: Date.now(), titulo, mensagem, tab, lida: false, data: new Date().toISOString() },
       ...prev
     ]);
+  };
+
+  const upsertAssistantNotification = (unreadTotal, latestUnread) => {
+    const subject = latestUnread?.subject ? `: ${latestUnread.subject}` : '';
+    const mensagem = unreadTotal === 1
+      ? `Tem 1 mensagem nova no Assistente${subject}.`
+      : `Tem ${unreadTotal} mensagens novas no Assistente.`;
+
+    setNotificacoes(prev => [
+      {
+        id: 'assistant-unread',
+        titulo: 'Nova mensagem no Assistente',
+        mensagem,
+        tab: 'assistente',
+        lida: false,
+        data: new Date().toISOString()
+      },
+      ...prev.filter(notificacao => notificacao.id !== 'assistant-unread')
+    ]);
+  };
+
+  const markAssistantNotificationRead = () => {
+    setNotificacoes(prev => prev.map(notificacao => (
+      notificacao.id === 'assistant-unread'
+        ? { ...notificacao, lida: true }
+        : notificacao
+    )));
   };
 
   const [alertaGlobal, setAlertaGlobal] = useState(null);
@@ -311,6 +343,61 @@ export function FinanceProvider({ children, userId }) {
       adicionarNotificacao(titulo, mensagem);
     }
   };
+
+  const refreshAssistantSummary = async ({ notify = false } = {}) => {
+    try {
+      const response = await apiFetch('/api/assistant/conversations');
+      if (response.status === 401 || response.status === 404) return;
+
+      const data = await response.json();
+      if (!response.ok) return;
+
+      const conversations = data.conversations || [];
+      const unreadTotal = conversations.reduce((total, item) => total + Number(item.unread_count || 0), 0);
+      const latestUnread = conversations.find(item => Number(item.unread_count || 0) > 0) || null;
+
+      setAssistantUnreadCount(unreadTotal);
+      setAssistantLatestPreview(latestUnread ? {
+        id: latestUnread.id,
+        subject: latestUnread.subject,
+        message: latestUnread.last_message || '',
+        userName: latestUnread.user_name || ''
+      } : null);
+
+      if (
+        unreadTotal > 0 &&
+        (assistantInitialLoadRef.current || (notify && unreadTotal > assistantUnreadRef.current))
+      ) {
+        upsertAssistantNotification(unreadTotal, latestUnread);
+      }
+
+      if (unreadTotal === 0 && assistantUnreadRef.current > 0) {
+        markAssistantNotificationRead();
+      }
+
+      assistantUnreadRef.current = unreadTotal;
+      assistantInitialLoadRef.current = false;
+    } catch (error) {
+      console.warn('Erro ao verificar mensagens do assistente:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (!userId) {
+      setAssistantUnreadCount(0);
+      setAssistantLatestPreview(null);
+      assistantUnreadRef.current = 0;
+      assistantInitialLoadRef.current = true;
+      return undefined;
+    }
+
+    refreshAssistantSummary({ notify: false });
+    const intervalId = setInterval(() => {
+      refreshAssistantSummary({ notify: true });
+    }, 20000);
+
+    return () => clearInterval(intervalId);
+  }, [userId]);
 
   const marcarNotificacaoLida = (id) => {
     setNotificacoes(prev => prev.map(n => n.id === id ? { ...n, lida: true } : n));
@@ -992,6 +1079,7 @@ export function FinanceProvider({ children, userId }) {
     <FinanceContext.Provider value={{
       usuario, atualizarUsuario,
       notificacoes, adicionarNotificacao, marcarNotificacaoLida, marcarTodasLidas,
+      assistantUnreadCount, assistantLatestPreview, refreshAssistantSummary,
       alertaGlobal, setAlertaGlobal, mostrarAlerta,
       editarTransacao, eliminarTransacao,
       editarConta, eliminarConta,

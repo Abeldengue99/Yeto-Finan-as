@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { generateProfessionalReport } from '../utils/pdfGenerator';
 
-export default function DashboardHome({ isAdmin }) {
+export default function DashboardHome({ isAdmin, setActiveTab }) {
   const { 
     usuario,
     movimentos, 
@@ -18,7 +18,9 @@ export default function DashboardHome({ isAdmin }) {
     kixikilas,
     projetos,
     pagamentosFixos,
-    mostrarAlerta
+    mostrarAlerta,
+    assistantUnreadCount,
+    assistantLatestPreview
   } = useFinance();
   const adminData = useAdmin(); // Access admin context data if needed
   const [currentInsightIndex, setCurrentInsightIndex] = useState(0);
@@ -246,6 +248,7 @@ export default function DashboardHome({ isAdmin }) {
   }, [aiInsights.rotativos.length]);
 
   const activeInsight = aiInsights.rotativos[currentInsightIndex] || aiInsights.rotativos[0];
+  const hasAssistantUnread = Number(assistantUnreadCount || 0) > 0;
 
   return (
     <>
@@ -267,12 +270,25 @@ export default function DashboardHome({ isAdmin }) {
         <div className="yeto-ai-card-content">
           <h3 style={{ color: '#ffb300', margin: '0 0 1rem 0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             Yeto AI <span style={{ fontSize: '0.7rem', background: 'rgba(255,179,0,0.2)', padding: '2px 8px', borderRadius: '10px', color: '#ffb300' }}>BETA</span>
-            {aiInsights.length > 1 && (
+            {aiInsights.rotativos.length > 1 && (
               <span style={{ fontSize: '0.75rem', color: '#8a8ca3', fontWeight: 'normal', marginLeft: 'auto' }}>
-                Dica {currentInsightIndex + 1} de {aiInsights.length}
+                Dica {currentInsightIndex + 1} de {aiInsights.rotativos.length}
               </span>
             )}
           </h3>
+          {hasAssistantUnread && (
+            <button
+              type="button"
+              className="assistant-ai-alert"
+              onClick={() => setActiveTab?.('assistente')}
+            >
+              <span className="assistant-ai-alert-icon">!</span>
+              <span>
+                <strong>{assistantUnreadCount} nova{assistantUnreadCount > 1 ? 's' : ''} no Assistente</strong>
+                <small>{assistantLatestPreview?.subject || 'Abra para responder/ver a conversa'}</small>
+              </span>
+            </button>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', minHeight: '45px' }}>
             <p key={currentInsightIndex} style={{ color: '#fff', margin: 0, fontSize: '1.05rem', lineHeight: '1.4', animation: 'fadeIn 0.5s ease-in' }}>
               {activeInsight}

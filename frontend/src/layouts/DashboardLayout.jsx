@@ -10,7 +10,7 @@ const PREMIUM_TABS = new Set(['divisas', 'projetos', 'gamificacao', 'kixikila'])
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { 
     usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData,
-    movimentos = [], dividas = [], kixikilas = [], projetos = []
+    movimentos = [], dividas = [], kixikilas = [], projetos = [], assistantUnreadCount = 0
   } = useFinance();
   const { systemSettings } = useAdmin();
   
@@ -20,6 +20,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const [showPlanExpiredModal, setShowPlanExpiredModal] = useState(false);
 
   const unreadCount = notificacoes.filter(n => !n.lida).length;
+  const assistantBadge = assistantUnreadCount > 99 ? '99+' : assistantUnreadCount;
 
   // Sistema de Pesquisa Global
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,6 +73,14 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
     setShowProfileModal(false);
     setShowMobileMenu(false);
     setActiveTab('planos');
+  };
+
+  const handleNotificationClick = (notif) => {
+    marcarNotificacaoLida(notif.id);
+    if (notif.tab) {
+      setShowNotifications(false);
+      setActiveTab(notif.tab);
+    }
   };
 
   useEffect(() => {
@@ -186,6 +195,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           {!isAdmin && (
             <button className={`sidebar-link hide-on-mobile ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => setActiveTab('assistente')}>
               <span>?</span> Assistente
+              {assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}
             </button>
           )}
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}>
@@ -217,6 +227,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               </button>
               <button className={`sidebar-link hide-on-mobile ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => setActiveTab('assistente')}>
                 <span>?</span> Assistente
+                {assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}
               </button>
               <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => setActiveTab('admin_settings')}>
                 <span>⚙️</span> Definições
@@ -359,7 +370,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                       notificacoes.map(notif => (
                         <div 
                           key={notif.id} 
-                          onClick={() => marcarNotificacaoLida(notif.id)}
+                          onClick={() => handleNotificationClick(notif)}
                           style={{ 
                             padding: '0.8rem', borderRadius: '10px', cursor: 'pointer',
                             background: notif.lida ? '#f9fafb' : 'rgba(55, 51, 146, 0.05)',
@@ -560,7 +571,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                   <button className={`mobile-menu-link ${activeTab === 'admin_dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_dashboard'); setShowMobileMenu(false); }}><span>👑</span> Visão Geral</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_users' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_users'); setShowMobileMenu(false); }}><span>👥</span> Utilizadores</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_payments'); setShowMobileMenu(false); }}><span>💳</span> Pagamentos</button>
-                  <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente</button>
+                  <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente{assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_settings'); setShowMobileMenu(false); }}><span>⚙️</span> Configurações Globais</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_logs' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_logs'); setShowMobileMenu(false); }}><span>📜</span> Histórico & Logs</button>
                 </>
@@ -573,7 +584,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               <button className={`mobile-menu-link ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => { setActiveTab('dividas'); setShowMobileMenu(false); }}><span>⚠️</span> Dívidas</button>
               <button className={`mobile-menu-link ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => { setActiveTab('pagamentos_fixos'); setShowMobileMenu(false); }}><span>📅</span> Pagamentos Fixos</button>
               {!isAdmin && (
-                <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente</button>
+                <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente{assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}</button>
               )}
               <button className={`mobile-menu-link ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}><span>🌍</span> Câmbio & Divisas</button>
               <button className={`mobile-menu-link ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => navigateToTab('projetos')}><span>🎯</span> Projetos (Sonhos)</button>
