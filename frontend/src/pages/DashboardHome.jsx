@@ -17,7 +17,8 @@ export default function DashboardHome({ isAdmin }) {
     receitas,
     kixikilas,
     projetos,
-    pagamentosFixos
+    pagamentosFixos,
+    mostrarAlerta
   } = useFinance();
   const adminData = useAdmin(); // Access admin context data if needed
   const [currentInsightIndex, setCurrentInsightIndex] = useState(0);
@@ -64,7 +65,12 @@ export default function DashboardHome({ isAdmin }) {
 
   const handleGeneratePDF = () => {
     if (!usuario?.isPremium && !isAdmin) {
-      alert("⚠️ Funcionalidade Premium!\n\nEste recurso é exclusivo para assinantes Premium. Aceda ao Menu > Fazer Upgrade para obter relatórios profissionais.");
+      mostrarAlerta(
+        'Funcionalidade Premium',
+        'Este recurso é exclusivo para assinantes Premium. Aceda ao menu Planos para obter relatórios profissionais.',
+        'aviso',
+        false
+      );
       return;
     }
     try {
@@ -79,7 +85,12 @@ export default function DashboardHome({ isAdmin }) {
       });
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
-      alert("Ocorreu um erro ao gerar o PDF. Verifique a consola para mais detalhes: " + error.message);
+      mostrarAlerta(
+        'Erro ao gerar PDF',
+        `Não foi possível gerar o PDF: ${error.message}`,
+        'erro',
+        false
+      );
     }
   };
 

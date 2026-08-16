@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
-import Modal from './Modal'; // Assumindo que já existe
 
 export default function GlobalAlert() {
   const { alertaGlobal, setAlertaGlobal } = useFinance();
@@ -30,6 +29,18 @@ export default function GlobalAlert() {
   if (!alertaGlobal) return null;
 
   const isError = alertaGlobal.tipo === 'erro';
+  const isWarning = alertaGlobal.tipo === 'aviso';
+  const accentColor = isError
+    ? '#E3000F'
+    : isWarning
+      ? '#f59e0b'
+      : 'var(--accent-color)';
+  const iconBackground = isError
+    ? 'rgba(227, 0, 15, 0.1)'
+    : isWarning
+      ? 'rgba(245, 158, 11, 0.14)'
+      : 'rgba(16, 185, 129, 0.1)';
+  const iconText = isError ? 'X' : isWarning ? '!' : 'OK';
 
   return (
     <div style={{
@@ -62,12 +73,15 @@ export default function GlobalAlert() {
         <div style={{
           width: '80px', height: '80px',
           borderRadius: '50%',
-          background: isError ? 'rgba(227, 0, 15, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+          background: iconBackground,
+          color: accentColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           margin: '0 auto 1.5rem',
-          fontSize: '3rem'
+          fontSize: isWarning ? '2.6rem' : '1.7rem',
+          fontWeight: '900',
+          boxShadow: `0 10px 24px ${isWarning ? 'rgba(245, 158, 11, 0.18)' : 'rgba(0,0,0,0.08)'}`
         }}>
-          {isError ? '❌' : '✅'}
+          {iconText}
         </div>
         
         <h3 style={{ margin: '0 0 1rem 0', color: 'var(--text-primary)', fontSize: '1.5rem' }}>
@@ -81,7 +95,7 @@ export default function GlobalAlert() {
         <button 
           onClick={handleClose}
           style={{
-            background: isError ? '#E3000F' : 'var(--accent-color)',
+            background: accentColor,
             color: 'white',
             border: 'none',
             padding: '1rem 2rem',
