@@ -56,15 +56,20 @@ export default function DashboardHome({ isAdmin }) {
       alert("⚠️ Funcionalidade Premium!\n\nEste recurso é exclusivo para assinantes Premium. Aceda ao Menu > Fazer Upgrade para obter relatórios profissionais.");
       return;
     }
-    generateProfessionalReport({
-      usuario,
-      saldoTotal,
-      receitasMes,
-      despesasMes,
-      movimentos: movimentosRecentes,
-      dividas,
-      projetos
-    });
+    try {
+      generateProfessionalReport({
+        usuario: usuario || { nome: 'Admin', email: 'admin@yeto.ao' },
+        saldoTotal,
+        receitasMes,
+        despesasMes,
+        movimentos: movimentosRecentes,
+        dividas,
+        projetos
+      });
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      alert("Ocorreu um erro ao gerar o PDF. Verifique a consola para mais detalhes: " + error.message);
+    }
   };
 
   const generateAIAdvice = () => {

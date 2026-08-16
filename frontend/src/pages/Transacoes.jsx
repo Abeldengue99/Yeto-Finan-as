@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Modal from '../components/Modal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { useFinance } from '../contexts/FinanceContext';
+import { generateTransactionsReport } from '../utils/pdfSpecificGenerators';
 
 export default function Transacoes() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -11,7 +12,7 @@ export default function Transacoes() {
   const [itemToEdit, setItemToEdit] = useState(null);
   
   const { 
-    contas, movimentos, 
+    contas, movimentos, usuario,
     registrarDespesa, adicionarReceita,
     categoriasEntradas, categoriasSaidas, adicionarCategoria, removerCategoria,
     eliminarTransacao, editarTransacao
@@ -81,6 +82,7 @@ export default function Transacoes() {
           <p className="text-secondary">Registe aqui todos os salários, bónus e despesas da casa.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
+          <button className="btn btn-pill" onClick={() => generateTransactionsReport(usuario, movimentos)} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
           <button className="btn btn-glass btn-pill" onClick={() => setIsCategoriaModalOpen(true)}>Gestão de Categorias</button>
           <button className="btn btn-primary btn-pill" onClick={openNewModal}>+ Novo Registo</button>
         </div>

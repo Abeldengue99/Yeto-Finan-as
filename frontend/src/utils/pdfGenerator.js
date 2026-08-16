@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export const generateProfessionalReport = (data) => {
   const { usuario, saldoTotal, receitasMes, despesasMes, movimentos, dividas, projetos } = data;
@@ -84,7 +84,7 @@ export const generateProfessionalReport = (data) => {
     `Kz ${m.valor.toLocaleString()}`
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: yPos + 5,
     head: [['Data', 'Descrição', 'Categoria', 'Tipo', 'Valor']],
     body: movimentosTabelaData.length > 0 ? movimentosTabelaData : [['Nenhum movimento registado.', '', '', '', '']],
@@ -132,7 +132,7 @@ export const generateProfessionalReport = (data) => {
     `Kz ${d.valor.toLocaleString()}`
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: yPos + 5,
     head: [['Entidade / Pessoa', 'Situação', 'Vencimento', 'Valor']],
     body: dividasTabelaData.length > 0 ? dividasTabelaData : [['Nenhuma dívida registada.', '', '', '']],
@@ -176,7 +176,7 @@ export const generateProfessionalReport = (data) => {
     ];
   });
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: yPos + 5,
     head: [['Projeto', 'Objetivo Total', 'Valor Guardado', 'Progresso']],
     body: projetosTabelaData.length > 0 ? projetosTabelaData : [['Nenhum projeto registado.', '', '', '']],
