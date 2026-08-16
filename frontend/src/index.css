@@ -957,14 +957,6 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 10;
 }
 
-cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  z-index: 10;
-}
-
 .sobre-modal-close:hover {
   background: rgba(55, 51, 146, 0.1);
   transform: scale(1.05);
