@@ -5,7 +5,10 @@ import Modal from '../components/Modal';
 import GlobalAlert from '../components/GlobalAlert';
 
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
-  const { usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData } = useFinance();
+  const { 
+    usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData,
+    movimentos = [], dividas = [], kixikilas = [], projetos = []
+  } = useFinance();
   const { systemSettings } = useAdmin();
   
   const [showNotifications, setShowNotifications] = useState(false);
@@ -13,6 +16,41 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const unreadCount = notificacoes.filter(n => !n.lida).length;
+
+  // Sistema de Pesquisa Global
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+
+  const getSearchResults = () => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    
+    const res = [];
+    movimentos.forEach(m => {
+      if (m.descricao?.toLowerCase().includes(q) || m.categoria?.toLowerCase().includes(q)) {
+        res.push({ type: 'Transação', icon: '💸', text: m.descricao, value: m.valor, tab: 'transacoes' });
+      }
+    });
+    dividas.forEach(d => {
+      if (d.pessoa?.toLowerCase().includes(q) || d.finalidade?.toLowerCase().includes(q) || d.nome?.toLowerCase().includes(q)) {
+        res.push({ type: 'Dívida', icon: '⚠️', text: d.pessoa || d.nome, value: d.valor, tab: 'dividas' });
+      }
+    });
+    kixikilas.forEach(k => {
+      if (k.nome?.toLowerCase().includes(q)) {
+        res.push({ type: 'Kixikila', icon: '🤝', text: k.nome, value: k.valorTotal || k.objetivo, tab: 'kixikila' });
+      }
+    });
+    projetos.forEach(p => {
+      if (p.nome?.toLowerCase().includes(q)) {
+        res.push({ type: 'Projeto', icon: '🎯', text: p.nome, value: p.objetivo, tab: 'projetos' });
+      }
+    });
+
+    return res.slice(0, 8); // Top 8 resultados
+  };
+
+  const searchResults = getSearchResults();
 
   if (systemSettings?.maintenanceMode && !isAdmin) {
     return (
@@ -191,9 +229,54 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
         
         {/* Top Bar */}
         <header className="dashboard-topbar">
-          <div className="search-bar">
+          <div className="search-bar" style={{ position: 'relative' }}>
             <span>🔍</span>
-            <input type="text" placeholder="Pesquisar despesas, dívidas, kixikila..." />
+            <input 
+              type="text" 
+              placeholder="Pesquisar despesas, dívidas, kixikila..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
+            />
+            {isSearchFocused && searchQuery.trim() !== '' && (
+              <div style={{
+                position: 'absolute', top: '110%', left: 0, width: '100%', background: 'white', 
+                borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.1)', zIndex: 100,
+                maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--glass-border)'
+              }}>
+                {searchResults.length > 0 ? (
+                  searchResults.map((res, i) => (
+                    <div 
+                      key={i} 
+                      onClick={() => { setActiveTab(res.tab); setSearchQuery(''); }}
+                      style={{ 
+                        padding: '10px 15px', display: 'flex', justifyContent: 'space-between', 
+                        alignItems: 'center', cursor: 'pointer', borderBottom: i < searchResults.length - 1 ? '1px solid #f0f0f0' : 'none',
+                        transition: 'background 0.2s'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.background = '#f9fafd'}
+                      onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '1.2rem' }}>{res.icon}</span>
+                        <div>
+                          <p style={{ margin: 0, fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--text-primary)' }}>{res.text}</p>
+                          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{res.type}</p>
+                        </div>
+                      </div>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                        Kz {Number(res.value || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ padding: '15px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                    Nenhum resultado encontrado.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           <div className="user-actions" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>

@@ -1295,3 +1295,48 @@ cursor: pointer;
 .mobile-only-menu-btn {
   display: none;
 }
+
+/* Yeto AI Smart Card Responsiveness */
+.yeto-ai-card {
+  background: linear-gradient(135deg, #1c1c1e 0%, #2c2c2e 100%);
+  border-radius: 20px;
+  padding: 1.5rem 2rem;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+  border: 1px solid rgba(255, 179, 0, 0.2);
+  position: relative;
+  overflow: hidden;
+  flex-wrap: wrap;
+}
+
+.yeto-ai-card-content {
+  flex: 1;
+  min-width: 250px;
+}
+
+.yeto-ai-action {
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .yeto-ai-card {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1.5rem;
+    gap: 1rem;
+  }
+  .yeto-ai-card-content {
+    width: 100%;
+  }
+  .yeto-ai-action {
+    margin-left: 0;
+    width: 100%;
+  }
+  .yeto-ai-action button {
+    width: 100%;
+    justify-content: center;
+  }
+}

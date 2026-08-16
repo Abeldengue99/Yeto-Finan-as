@@ -38,6 +38,8 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+const { sendMassPromotion, sendPaymentApproved } = require('../services/emailService');
+
 const getLogs = async (req, res) => {
   try {
     const result = await pool.query(`
@@ -53,8 +55,96 @@ const getLogs = async (req, res) => {
   }
 };
 
+const sendPromotions = async (req, res) => {
+  const { subject, htmlContent } = req.body;
+  const adminId = req.user?.id || '00000000-0000-0000-0000-000000000000'; // fallback mock
+
+  try {
+    if (!subject || !htmlContent) {
+      return res.status(400).json({ error: 'Assunto e conteúdo são obrigatórios.' });
+    }
+
+    // Buscar todos os utilizadores verificados
+    const usersRes = await pool.query("SELECT email, name FROM users WHERE email_verified = TRUE");
+    
+    if (usersRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Não existem utilizadores com email verificado.' });
+    }
+
+    // Enviar emails
+    const result = await sendMassPromotion(usersRes.rows, subject, htmlContent);
+
+    // Registar log
+    await pool.query(
+      "INSERT INTO admin_logs (admin_id, action_type, description) VALUES ($1, $2, $3)",
+      [adminId, 'send_mass_email', `Enviou email promocional para ${result.sent} utilizadores: ${subject}`]
+    );
+
+    res.json({ message: `Emails enviados com sucesso para ${result.sent} utilizadores.` });
+  } catch (error) {
+    console.error('Erro ao enviar promoções:', error);
+    res.status(500).json({ error: 'Erro interno ao enviar emails.' });
+  }
+};
+
+// Aprovação de pagamento (novo/integrado)
+const approvePayment = async (req, res) => {
+  const { paymentId } = req.params;
+  const adminId = req.user?.id || '00000000-0000-0000-0000-000000000000';
+
+  try {
+    // 1. Get payment details
+    const paymentRes = await pool.query(
+      "SELECT p.*, u.email, u.name as user_name FROM payment_approvals p JOIN users u ON p.user_id = u.id WHERE p.id = $1", 
+      [paymentId]
+    );
+
+    if (paymentRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Pagamento não encontrado.' });
+    }
+
+    const payment = paymentRes.rows[0];
+    if (payment.status !== 'pending') {
+      return res.status(400).json({ error: 'Pagamento já processado.' });
+    }
+
+    // 2. Update payment status
+    await pool.query("UPDATE payment_approvals SET status = 'approved', approved_by = $1, approved_at = NOW() WHERE id = $2", [adminId, paymentId]);
+
+    // 3. Update user plan and expiry date
+    // Calculate new expiry date based on plan
+    let interval = '1 year'; // Default (anual)
+    if (payment.plan_type === 'semestral') {
+      interval = '6 months';
+    }
+
+    await pool.query(`
+      UPDATE users 
+      SET 
+        plan_type = 'premium',
+        plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + INTERVAL '${interval}'
+      WHERE id = $1
+    `, [payment.user_id]);
+
+    // 4. Send email
+    try {
+      await sendPaymentApproved(payment.email, payment.user_name, payment.plan_type);
+    } catch (e) {
+      console.error('Erro ao enviar email de pagamento aprovado:', e);
+      // Não bloqueia a transação
+    }
+
+    res.json({ message: 'Pagamento aprovado e plano atualizado!' });
+  } catch (error) {
+    console.error('Erro ao aprovar pagamento:', error);
+    res.status(500).json({ error: 'Erro ao aprovar pagamento.' });
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getAllUsers,
-  getLogs
+  getLogs,
+  sendPromotions,
+  approvePayment
 };

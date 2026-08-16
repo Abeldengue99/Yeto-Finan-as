@@ -1,39 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import familyImg from '../assets/login_family.png';
 import Planos from './Planos';
 
 export default function LoginScreen({ onLogin }) {
   const [showSobre, setShowSobre] = useState(false);
+  const [flowState, setFlowState] = useState('login'); // 'login', 'register', 'verify', 'forgot', 'reset'
+  
+  // Campos
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState('');
   const [occupation, setOccupation] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // Status
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const isRegistering = flowState === 'register';
+
+  // Limpa mensagens quando muda de fluxo
+  useEffect(() => {
+    setErrorMsg('');
+    setSuccessMsg('');
+  }, [flowState]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMsg('');
+    setSuccessMsg('');
 
     try {
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.needsVerification) {
+          setFlowState('verify');
+          setSuccessMsg(data.error || 'A sua conta precisa de ser verificada.');
+          return;
+        }
         throw new Error(data.error || 'Erro ao efetuar login');
       }
 
-      // Pass the user data up to the App
       onLogin(data);
     } catch (err) {
       setErrorMsg(err.message);
@@ -50,9 +67,7 @@ export default function LoginScreen({ onLogin }) {
     try {
       const response = await fetch('http://localhost:5000/api/auth/register', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, occupation })
       });
 
@@ -62,13 +77,304 @@ export default function LoginScreen({ onLogin }) {
         throw new Error(data.error || 'Erro ao criar conta');
       }
 
-      // Pass the user data up to the App to auto-login
+      if (data.needsVerification) {
+        setFlowState('verify');
+        setSuccessMsg(data.message || 'Conta criada! Verifique o seu email com o código de 6 dígitos.');
+      } else {
+        onLogin(data);
+      }
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verificationCode })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Código inválido');
+      }
+
+      // Verificação bem sucedida, faz login
       onLogin(data);
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleResendCode = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/resend-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setSuccessMsg('Novo código enviado com sucesso!');
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao pedir recuperação');
+      }
+
+      setFlowState('reset');
+      setSuccessMsg(data.message || 'Verifique o seu email com o código de recuperação.');
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: verificationCode, newPassword: password })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao redefinir senha');
+      }
+
+      setFlowState('login');
+      setSuccessMsg('Senha redefinida com sucesso! Inicie sessão.');
+      setPassword('');
+      setVerificationCode('');
+    } catch (err) {
+      setErrorMsg(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderFormContent = () => {
+    if (flowState === 'verify') {
+      return (
+        <form onSubmit={handleVerify}>
+          <p style={{ color: '#8a8ca3', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+            Enviámos um código de 6 dígitos para <strong>{email}</strong>.
+          </p>
+          <div className="input-group">
+            <label>🔢 Código de Verificação</label>
+            <input 
+              type="text" 
+              placeholder="000000" 
+              maxLength="6"
+              required 
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))} 
+              style={{ letterSpacing: '8px', fontSize: '1.5rem', textAlign: 'center', fontWeight: 'bold' }}
+            />
+          </div>
+          <button type="submit" className="btn-login" disabled={isLoading || verificationCode.length !== 6}>
+            {isLoading ? 'A VERIFICAR...' : 'VERIFICAR CONTA'}
+          </button>
+          <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+            <button type="button" onClick={handleResendCode} style={{ background: 'none', border: 'none', color: '#373392', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}>
+              Reenviar Código
+            </button>
+            <br/><br/>
+            <button type="button" onClick={() => setFlowState('login')} style={{ background: 'none', border: 'none', color: '#8a8ca3', cursor: 'pointer' }}>
+              Voltar ao Login
+            </button>
+          </div>
+        </form>
+      );
+    }
+
+    if (flowState === 'forgot') {
+      return (
+        <form onSubmit={handleForgotPassword}>
+          <p style={{ color: '#8a8ca3', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+            Insira o seu email. Se a conta existir, enviaremos um código de recuperação.
+          </p>
+          <div className="input-group">
+            <label>✉️ Email</label>
+            <input 
+              type="email" 
+              placeholder="seuemail@exemplo.com" 
+              required 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)} 
+            />
+          </div>
+          <button type="submit" className="btn-login" disabled={isLoading}>
+            {isLoading ? 'A ENVIAR...' : 'ENVIAR CÓDIGO'}
+          </button>
+          <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+            <button type="button" onClick={() => setFlowState('login')} style={{ background: 'none', border: 'none', color: '#8a8ca3', cursor: 'pointer' }}>
+              Voltar ao Login
+            </button>
+          </div>
+        </form>
+      );
+    }
+
+    if (flowState === 'reset') {
+      return (
+        <form onSubmit={handleResetPassword}>
+          <p style={{ color: '#8a8ca3', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+            Insira o código enviado para <strong>{email}</strong> e a sua nova senha.
+          </p>
+          <div className="input-group">
+            <label>🔢 Código de Recuperação</label>
+            <input 
+              type="text" 
+              placeholder="000000" 
+              maxLength="6"
+              required 
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))} 
+              style={{ letterSpacing: '8px', fontSize: '1.5rem', textAlign: 'center', fontWeight: 'bold' }}
+            />
+          </div>
+          <div className="input-group">
+            <label>🔒 Nova Senha</label>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input 
+                type={showPassword ? "text" : "password"} 
+                placeholder="••••••••" 
+                required 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)} 
+                style={{ width: '100%', paddingRight: '40px' }}
+              />
+              <button 
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }}
+                title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+            <small style={{ color: '#8a8ca3', fontSize: '0.75rem', marginTop: '4px', display: 'block' }}>
+              No mínimo 10 caracteres, 1 letra, 1 número e 1 caractere especial.
+            </small>
+          </div>
+          <button type="submit" className="btn-login" disabled={isLoading || verificationCode.length !== 6}>
+            {isLoading ? 'A GUARDAR...' : 'REDEFINIR SENHA'}
+          </button>
+          <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+            <button type="button" onClick={() => setFlowState('login')} style={{ background: 'none', border: 'none', color: '#8a8ca3', cursor: 'pointer' }}>
+              Voltar ao Login
+            </button>
+          </div>
+        </form>
+      );
+    }
+
+    return (
+      <form onSubmit={isRegistering ? handleRegister : handleLogin}>
+        {isRegistering && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label>👤 Nome Completo</label>
+              <input type="text" placeholder="Seu nome" required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label>💼 Profissão</label>
+              <input type="text" placeholder="Opcional..." value={occupation} onChange={(e) => setOccupation(e.target.value)} />
+            </div>
+          </div>
+        )}
+
+        <div className="input-group">
+          <label>✉️ Email</label>
+          <input type="email" placeholder="seuemail@exemplo.com" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+
+        <div className="input-group">
+          <label>🔒 Senha</label>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <input 
+              type={showPassword ? "text" : "password"} 
+              placeholder="••••••••" 
+              required 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)} 
+              style={{ width: '100%', paddingRight: '40px' }}
+            />
+            <button 
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{ position: 'absolute', right: '10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: '#6c757d', padding: 0 }}
+              title={showPassword ? "Ocultar senha" : "Mostrar senha"}
+            >
+              {showPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
+        </div>
+
+        {!isRegistering && (
+          <div className="login-options">
+            <label>
+              <input type="checkbox" defaultChecked /> Manter-me conectado
+            </label>
+            <button type="button" onClick={() => setFlowState('forgot')} style={{ background: 'none', border: 'none', color: '#373392', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}>
+              Esqueceu a senha?
+            </button>
+          </div>
+        )}
+
+        <button type="submit" className="btn-login" disabled={isLoading}>
+          {isLoading ? 'A PROCESSAR...' : (isRegistering ? 'CRIAR CONTA' : 'ENTRAR')}
+        </button>
+      </form>
+    );
+  };
+
+  const getTitle = () => {
+    if (flowState === 'verify') return 'Verifique o seu email';
+    if (flowState === 'forgot') return 'Recuperar Senha';
+    if (flowState === 'reset') return 'Nova Senha';
+    if (flowState === 'register') return 'Crie a sua conta';
+    return 'Acesse a sua conta';
   };
 
   return (
@@ -104,123 +410,46 @@ export default function LoginScreen({ onLogin }) {
           
           <div className="login-header">
             <div className="css-logo">Y</div>
-            <h1>
-              Yeto
-              <span>{isRegistering ? 'Crie a sua conta' : 'Acesse a sua conta'}</span>
-            </h1>
+            <h1>Yeto<span>{getTitle()}</span></h1>
           </div>
 
-          <form onSubmit={isRegistering ? handleRegister : handleLogin}>
-            {errorMsg && (
-              <div style={{ background: 'rgba(244, 91, 91, 0.1)', color: 'var(--danger-color)', padding: '0.8rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem', textAlign: 'center' }}>
-                {errorMsg}
-              </div>
-            )}
-
-            {isRegistering && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div className="input-group" style={{ marginBottom: 0 }}>
-                  <label>👤 Nome Completo</label>
-                  <input 
-                    type="text" 
-                    placeholder="Seu nome" 
-                    required 
-                    value={name}
-                    onChange={(e) => setName(e.target.value)} 
-                  />
-                </div>
-                <div className="input-group" style={{ marginBottom: 0 }}>
-                  <label>💼 Profissão</label>
-                  <input 
-                    type="text" 
-                    placeholder="Opcional..." 
-                    value={occupation}
-                    onChange={(e) => setOccupation(e.target.value)} 
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="input-group">
-              <label>✉️ Email</label>
-              <input 
-                type="email" 
-                placeholder="seuemail@exemplo.com" 
-                required 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)} 
-              />
+          {errorMsg && (
+            <div style={{ background: 'rgba(244, 91, 91, 0.1)', color: 'var(--danger-color)', padding: '0.8rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem', textAlign: 'center' }}>
+              {errorMsg}
             </div>
+          )}
 
-            <div className="input-group">
-              <label>🔒 Senha</label>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <input 
-                  type={showPassword ? "text" : "password"} 
-                  placeholder="••••••••" 
-                  required 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)} 
-                  style={{ width: '100%', paddingRight: '40px' }}
-                />
-                <button 
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute',
-                    right: '10px',
-                    background: 'none',
-                    border: 'none',
-                    outline: 'none',
-                    cursor: 'pointer',
-                    fontSize: '1.2rem',
-                    color: '#6c757d',
-                    padding: '0'
-                  }}
-                  title={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                >
-                  {showPassword ? '🙈' : '👁️'}
-                </button>
-              </div>
+          {successMsg && (
+            <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: 'var(--success-color)', padding: '0.8rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem', textAlign: 'center', border: '1px solid rgba(16,185,129,0.3)' }}>
+              {successMsg}
             </div>
+          )}
 
-            {!isRegistering && (
-              <div className="login-options">
-                <label>
-                  <input type="checkbox" defaultChecked />
-                  Manter-me conectado
-                </label>
-                <a href="#esqueceu">Esqueceu a senha?</a>
-              </div>
-            )}
+          {renderFormContent()}
 
-            <button type="submit" className="btn-login" disabled={isLoading}>
-              {isLoading ? 'A PROCESSAR...' : (isRegistering ? 'CRIAR CONTA' : 'ENTRAR')}
-            </button>
-          </form>
-
-          <div className="btn-register-link" style={{ marginTop: '2rem', textAlign: 'center' }}>
-            {isRegistering ? (
-              <>Já tem uma conta? <a href="#login" onClick={(e) => { e.preventDefault(); setIsRegistering(false); setErrorMsg(''); }} style={{ color: '#FFB300', fontWeight: '800' }}>Faça Login</a></>
-            ) : (
-              <>Não tem uma conta? <a href="#criar" onClick={(e) => { e.preventDefault(); setIsRegistering(true); setErrorMsg(''); }} style={{ color: '#FFB300', fontWeight: '800' }}>Crie uma conta</a></>
-            )}
-            
-            {/* Botão visível apenas no mobile */}
-            <button 
-              type="button" 
-              className="show-on-mobile"
-              onClick={() => setShowSobre(true)}
-              style={{
-                display: 'none', // Oculto por padrão, mas você pode controlar via CSS no mobile
-                marginTop: '1.5rem', background: '#f2f3f9', color: '#373392', border: 'none',
-                padding: '0.8rem 2rem', borderRadius: '25px', fontWeight: 'bold',
-                cursor: 'pointer', width: '100%',
-              }}
-            >
-              🌍 Como funciona & Planos
-            </button>
-          </div>
+          {(flowState === 'login' || flowState === 'register') && (
+            <div className="btn-register-link" style={{ marginTop: '2rem', textAlign: 'center' }}>
+              {isRegistering ? (
+                <>Já tem uma conta? <button type="button" onClick={() => setFlowState('login')} style={{ background: 'none', border: 'none', color: '#FFB300', fontWeight: '800', cursor: 'pointer', fontSize: '0.9rem' }}>Faça Login</button></>
+              ) : (
+                <>Não tem uma conta? <button type="button" onClick={() => setFlowState('register')} style={{ background: 'none', border: 'none', color: '#FFB300', fontWeight: '800', cursor: 'pointer', fontSize: '0.9rem' }}>Crie uma conta</button></>
+              )}
+              
+              <button 
+                type="button" 
+                className="show-on-mobile"
+                onClick={() => setShowSobre(true)}
+                style={{
+                  display: 'none',
+                  marginTop: '1.5rem', background: '#f2f3f9', color: '#373392', border: 'none',
+                  padding: '0.8rem 2rem', borderRadius: '25px', fontWeight: 'bold',
+                  cursor: 'pointer', width: '100%',
+                }}
+              >
+                🌍 Como funciona & Planos
+              </button>
+            </div>
+          )}
 
         </div>
       </div>

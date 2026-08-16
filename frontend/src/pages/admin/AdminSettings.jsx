@@ -11,6 +11,11 @@ export default function AdminSettings() {
   const [tipoAlerta, setTipoAlerta] = useState(systemSettings.globalAlert.type);
   const [isAlertaAtivo, setIsAlertaAtivo] = useState(systemSettings.globalAlert.active);
 
+  // Marketing Email States
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailContent, setEmailContent] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
   const handlePriceUpdate = (e) => {
     e.preventDefault();
     if (window.confirm('Tem a certeza que deseja atualizar o preçário dos planos?')) {
@@ -47,6 +52,39 @@ export default function AdminSettings() {
       }
     }
   };
+
+  const handleSendMassEmail = async (e) => {
+    e.preventDefault();
+    if (window.confirm('Tem a certeza que deseja disparar este email para TODOS os utilizadores verificados?')) {
+      setIsSendingEmail(true);
+      try {
+        // No Yeto o admin login usa mock no Node/PG, adaptamos a chamada
+        const response = await fetch('http://localhost:5000/api/admin/promotions', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            // Autenticação básica ou bearer
+            'Authorization': 'Bearer admin-token'
+          },
+          body: JSON.stringify({ subject: emailSubject, htmlContent: emailContent })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Erro ao enviar emails.');
+        
+        adicionarNotificacao('Marketing', data.message);
+        addLog(`Envio de Promoção: "${emailSubject}"`, 'info');
+        setEmailSubject('');
+        setEmailContent('');
+      } catch (err) {
+        alert(err.message);
+        adicionarNotificacao('Erro no Envio', err.message);
+      } finally {
+        setIsSendingEmail(false);
+      }
+    }
+  };
+
 
   return (
     <div style={{ paddingBottom: '2rem' }}>
@@ -160,6 +198,52 @@ export default function AdminSettings() {
             
             <button type="submit" className="btn" style={{ background: 'var(--accent-gradient)', color: 'white', width: '100%', marginTop: '1rem', padding: '0.8rem', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
               📢 Guardar e Aplicar Configuração do Banner
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem', marginTop: '2rem' }}>
+        {/* Painel de Email Marketing */}
+        <div className="dash-card" style={{ borderLeft: '4px solid #373392' }}>
+          <h3 className="section-title">📧 Disparo de Email Marketing (Brevo)</h3>
+          <p className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+            Envie promoções, novidades ou newsletters para todos os utilizadores da plataforma de forma instantânea.
+          </p>
+
+          <form onSubmit={handleSendMassEmail}>
+            <div className="input-group">
+              <label>Assunto do Email</label>
+              <input 
+                type="text" 
+                value={emailSubject} 
+                onChange={(e) => setEmailSubject(e.target.value)} 
+                className="qt-input" 
+                placeholder="Ex: 🚀 Promoção Especial: 50% de Desconto no Plano Anual!"
+                required
+              />
+            </div>
+
+            <div className="input-group" style={{ marginTop: '1rem' }}>
+              <label>Conteúdo (Aceita código HTML simples)</label>
+              <textarea 
+                value={emailContent} 
+                onChange={(e) => setEmailContent(e.target.value)} 
+                className="qt-input" 
+                placeholder="<h2>Olá, Família Yeto!</h2><p>Temos novidades fresquinhas...</p>"
+                rows="6"
+                required
+                style={{ resize: 'vertical', fontFamily: 'monospace' }}
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              disabled={isSendingEmail}
+              className="btn" 
+              style={{ background: '#373392', color: 'white', width: '100%', marginTop: '1rem', padding: '0.8rem', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', opacity: isSendingEmail ? 0.7 : 1 }}
+            >
+              {isSendingEmail ? 'A DISPARAR EMAILS...' : '🚀 DISPARAR PARA TODOS OS UTILIZADORES'}
             </button>
           </form>
         </div>

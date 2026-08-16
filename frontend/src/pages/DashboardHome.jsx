@@ -8,9 +8,20 @@ import {
 import { generateProfessionalReport } from '../utils/pdfGenerator';
 
 export default function DashboardHome({ isAdmin }) {
-  const { usuario, saldoTotal, despesas, dividas, projetos, movimentos, pagamentosFixos, receitas, kixikilas } = useFinance();
+  const { 
+    usuario,
+    movimentos, 
+    saldoTotal, 
+    dividas,
+    despesas,
+    receitas,
+    kixikilas,
+    projetos,
+    pagamentosFixos
+  } = useFinance();
   const adminData = useAdmin(); // Access admin context data if needed
   const [currentInsightIndex, setCurrentInsightIndex] = useState(0);
+  const [showAIModal, setShowAIModal] = useState(false);
   
   // 1. Pegar os 4 movimentos mais recentes
   const movimentosRecentes = movimentos.slice(0, 4);
@@ -73,125 +84,132 @@ export default function DashboardHome({ isAdmin }) {
   };
 
   const generateAIAdvice = () => {
-    const insights = [];
+    let rotativos = [];
+    let bons = [];
+    let maus = [];
+    let conselhos = [];
 
+    // --- Análise de Admin (Apenas se for Admin) ---
     if (isAdmin && adminData) {
-      // 👑 Insights Específicos para Administradores
       const stats = adminData.getStats();
       const numUsers = stats.totalUsers || 0;
       const numPremium = stats.premiumUsers || 0;
       const pendingApprovals = stats.pendingApprovals || 0;
-      const mrr = stats.mrr || 0;
       
       if (numUsers === 0) {
-        insights.push("🚀 Lançamento: O sistema está em pleno funcionamento e pronto para receber utilizadores. Inicie as campanhas de marketing para atrair os primeiros registos!");
-        insights.push("🛡️ Monitorização: As métricas de desempenho estão excelentes. A plataforma aguarda os primeiros passos operacionais.");
+        rotativos.push("🚀 Lançamento: O sistema está pronto para receber utilizadores. Inicie as campanhas!");
+        conselhos.push("Inicie campanhas de marketing para atrair os primeiros registos na plataforma.");
       } else {
         if (pendingApprovals > 0) {
-          insights.push(`🚨 Urgente: Existem ${pendingApprovals} comprovativos de pagamento aguardando aprovação na "Sala de Máquinas". Agilize isto para garantir a satisfação dos clientes e libertar a sua receita!`);
+          rotativos.push(`🚨 Urgente: ${pendingApprovals} pagamento(s) aguardando aprovação na Sala de Máquinas.`);
+          maus.push(`Existem pagamentos pendentes de aprovação que afetam a satisfação dos clientes.`);
         }
         
-        insights.push(`📈 Desempenho Global: O sistema regista ${numUsers} utilizador(es), com ${numPremium} assinante(s) do plano Premium.`);
-        
         const conversionRate = numPremium > 0 ? ((numPremium / numUsers) * 100).toFixed(1) : 0;
-        
         if (numPremium === 0) {
-          insights.push("💡 Sugestão Comercial: Tem utilizadores na plataforma mas nenhum aderiu ao Premium. Considere disparar uma notificação global a oferecer descontos nas funcionalidades IA e Divisas.");
+          rotativos.push("💡 Sugestão Comercial: Nenhum utilizador aderiu ao Premium. Considere disparar uma oferta.");
+          maus.push("A taxa de conversão para Premium está em 0%. Nenhuma receita direta neste momento.");
         } else if (conversionRate < 10) {
-          insights.push(`📊 Taxa de Conversão: Apenas ${conversionRate}% dos utilizadores pagam. Aumente o foco nas vantagens do plano Premium para subir a Receita Mensal Recorrente (MRR), que atualmente está em Kz ${mrr.toLocaleString()}.`);
+          rotativos.push(`📊 Taxa de Conversão: Apenas ${conversionRate}% pagam. Aumente o foco no Premium.`);
+          maus.push(`Taxa de conversão (${conversionRate}%) abaixo do ideal (10%+).`);
         } else {
-          insights.push(`🔥 Excelente conversão: ${conversionRate}% dos utilizadores pagam pelo serviço, gerando uma MRR de Kz ${mrr.toLocaleString()}. Foco agora é reduzir o 'churn' (cancelamentos).`);
+          rotativos.push(`🔥 Excelente conversão: ${conversionRate}% pagam. Foco na retenção.`);
+          bons.push(`Alta taxa de conversão Premium (${conversionRate}%). O negócio está escalável.`);
         }
 
         const blockedUsers = adminData.users ? adminData.users.filter(u => u.status === 'Bloqueado') : [];
         if (blockedUsers.length > 0) {
-          insights.push(`⚠️ Segurança: ${blockedUsers.length} conta(s) encontram-se bloqueadas. Verifique regularmente os logs de sistema para prevenir atividades maliciosas na plataforma.`);
-        }
-        
-        const dangerLogs = adminData.logs ? adminData.logs.slice(0, 10).filter(l => l.tipo === 'danger' || l.tipo === 'error') : [];
-        if (dangerLogs.length >= 2) {
-           insights.push("🛑 Alerta de Risco: Ocorreram múltiplas ações suspeitas ou erros críticos registados nos logs recentemente. Vigie a atividade de perto.");
+          rotativos.push(`⚠️ Segurança: ${blockedUsers.length} conta(s) bloqueadas. Vigie os logs.`);
         }
       }
 
-      // Adicionar mais conselhos gerais de gestão para garantir que o Admin tem acesso a um fluxo constante de dicas ricas (Mínimo 10 Conselhos disponíveis)
-      insights.push("🌐 Expansão Estratégica: Avalie as províncias mais ativas na plataforma para focar os seus futuros investimentos em publicidade local (ex: Luanda, Benguela, Huíla).");
-      insights.push("💬 Feedback Constante: A melhor forma de reduzir o churn (cancelamentos) é ligar ou enviar email a 5 clientes Premium por semana a pedir opiniões sinceras sobre o Yeto.");
-      insights.push("🔋 Auditoria de Servidor: Mantenha sempre um olho no consumo de recursos (RAM e CPU) do servidor Node/Express à medida que a base de dados Postgres cresce.");
-      insights.push("📆 Fecho do Mês: Entre os dias 28 e 31, envie notificações gerais para lembrar as famílias de reconciliarem as suas contas e avaliarem o Orçamento Mensal.");
-      insights.push("🤝 Parcerias Institucionais: Com o aumento do volume de dados, comece a mapear potenciais parcerias com bancos angolanos (ex: BAI, BFA) para futuras integrações API.");
-      insights.push("📊 Relatórios Financeiros: A funcionalidade de PDF está agora disponível. Incentive os utilizadores através do canal de comunicação a imprimirem relatórios antes das suas reuniões de família.");
-      insights.push("🤖 Treino do Conselheiro IA: O algoritmo de Inteligência Artificial está a alimentar-se de dados reais de consumo. Lembre os utilizadores que quanto mais transações registarem, mais precisos serão os conselhos.");
-      insights.push("🔒 Segurança Contínua: Certifique-se periodicamente de que a equipa de administração atualiza as suas senhas e evite acessos a partir de redes Wi-Fi públicas sem VPN.");
-      insights.push("🎯 Gamificação da Plataforma: Avalie quais são os Desafios Familiares mais concluídos pelos utilizadores para criar Campanhas de Marketing baseadas nos hábitos de poupança reais dos angolanos.");
-    } else {
-      // 👨‍👩‍👧‍👦 Conselheiro Yeto AI Analítico (Análise de Dados Reais)
-      const diaHoje = new Date().getDate();
-      
-      if (receitasMes > 0) {
-        const taxaGasto = (despesasMes / receitasMes) * 100;
-        if (taxaGasto > 80) {
-          insights.push(`📉 Alerta Crítico de Gastos: Já comprometeu ${taxaGasto.toFixed(1)}% dos seus rendimentos deste mês. Se continuar assim, arrisca-se a contrair dívidas. Congele compras não essenciais imediatamente.`);
-        } else if (taxaGasto > 50 && taxaGasto <= 80) {
-          insights.push(`⚠️ Atenção: Os seus gastos representam ${taxaGasto.toFixed(1)}% das suas entradas. Tente não ultrapassar a regra dos 50/30/20 (50% essenciais, 30% desejos, 20% poupança).`);
-        } else if (taxaGasto < 40 && despesasMes > 0) {
-          insights.push(`🌟 Genial! Consumiu apenas ${taxaGasto.toFixed(1)}% do seu orçamento mensal. Utilize este saldo remanescente para acelerar um Projeto ou investir num depósito a prazo.`);
-        }
-      }
+      rotativos.push("🔋 Auditoria de Servidor: Mantenha sempre um olho no consumo de RAM/CPU.");
+      rotativos.push("📆 Fecho do Mês: Envie notificações entre os dias 28 e 31 para reconciliação.");
+    }
 
-      // Análise de Pagamentos Fixos
-      const pagamentosAtrasados = pagamentosFixos.filter(p => !p.pagoEsteMes && diaHoje > p.diaVencimento);
-      const pagamentosCriticos = pagamentosFixos.filter(p => !p.pagoEsteMes && (p.diaVencimento - diaHoje <= 3) && (p.diaVencimento - diaHoje >= 0));
-
-      if (pagamentosAtrasados.length > 0) {
-        insights.push(`🚨 URGÊNCIA: Tem ${pagamentosAtrasados.length} pagamento(s) fixo(s) em atraso (ex: "${pagamentosAtrasados[0].nome}"). Regularize isto hoje mesmo para não acumular juros de mora!`);
-      }
-      if (pagamentosCriticos.length > 0) {
-        insights.push(`⏳ Provisão Necessária: Prepare Kz ${pagamentosCriticos[0].valor.toLocaleString()} porque o pagamento de "${pagamentosCriticos[0].nome}" vence em breve (dia ${pagamentosCriticos[0].diaVencimento}).`);
-      }
-
-      // Análise Profunda de Dívidas vs Poupanças
-      if (totalAPagar > saldoTotal && saldoTotal >= 0) {
-        insights.push(`💳 Alerta Vermelho (Risco de Falência): O seu total de dívidas (Kz ${totalAPagar.toLocaleString()}) supera completamente o dinheiro que tem no banco (Kz ${saldoTotal.toLocaleString()}). Priorize pagar as dívidas menores rapidamente usando o Método Bola de Neve para libertar fluxo de caixa.`);
-      } else if (totalAPagar > 0 && (totalAPagar / saldoTotal) > 0.4) {
-        insights.push(`📊 Cuidado: 40% do seu capital disponível seria engolido pelas dívidas. Tente renegociar prazos com os seus credores antes de ficar descapitalizado.`);
-      }
-
-      if (totalAReceber > 0) {
-        const maiorDevedor = dividas.filter(d => !d.paga && d.tipo === 'a_receber').sort((a,b) => b.valor - a.valor)[0];
-        insights.push(`💰 Património na Rua: Tem Kz ${totalAReceber.toLocaleString()} a receber. O seu maior devedor é ${maiorDevedor.pessoa} (Kz ${maiorDevedor.valor.toLocaleString()}). Aja de forma proativa enviando um lembrete educado esta semana.`);
-      }
-
-      // Análise de Kixikilas
-      const kixikilasAtivas = kixikilas.filter(k => k.status === 'ativo' || k.status === 'em_andamento' || k.id); // Considerando todas por agora
-      if (kixikilasAtivas.length > 0) {
-         insights.push(`🤝 Disciplina de Kixikila: Não se esqueça de reservar o valor das quotas das suas ${kixikilasAtivas.length} Kixikila(s) ativas assim que o salário cair na conta.`);
-      }
-
-      // Análise de Projetos
-      const projetosEmAndamento = projetos.filter(p => p.valorGuardado < p.objetivo);
-      if (projetosEmAndamento.length > 0) {
-        const projetoMaisProximo = projetosEmAndamento.sort((a, b) => (b.valorGuardado/b.objetivo) - (a.valorGuardado/a.objetivo))[0];
-        const percentagem = ((projetoMaisProximo.valorGuardado / projetoMaisProximo.objetivo) * 100).toFixed(1);
-        
-        if (percentagem > 80) {
-          insights.push(`🎯 Retalia Final! O projeto "${projetoMaisProximo.nome}" está a ${percentagem}%! Faltam só Kz ${(projetoMaisProximo.objetivo - projetoMaisProximo.valorGuardado).toLocaleString()} para atingir o objetivo!`);
-        } else if (saldoTotal > 100000 && receitasMes > despesasMes && pagamentosAtrasados.length === 0) {
-          insights.push(`💡 Aceleração: Com o saldo positivo que tem na conta, se depositar hoje um extra no projeto "${projetoMaisProximo.nome}", atingirá a sua meta muito mais rápido e evitará gastos desnecessários.`);
-        }
-      }
-
-      // Elogio condicional rigoroso
-      if (insights.length <= 2 && saldoTotal > 0 && pagamentosAtrasados.length === 0 && totalAPagar === 0) {
-        insights.push("✨ Perfeição Financeira: Não tem pagamentos atrasados, zero dívidas e o saldo é positivo. Continue com esta forte disciplina! A inteligência de um bom investidor está em não perder dinheiro.");
-      }
-      
-      if (saldoTotal === 0 && receitasMes === 0 && despesasMes === 0) {
-         insights.push("👋 Olá! Comece por registar as suas contas, receitas ou despesas no menu Transações para que eu possa iniciar as análises financeiras e ajudar-te a crescer o teu património.");
+    // --- Análise Financeira Pessoal (Para TODOS, incluindo Admin) ---
+    const diaHoje = new Date().getDate();
+    
+    if (receitasMes > 0) {
+      const taxaGasto = (despesasMes / receitasMes) * 100;
+      if (taxaGasto > 80) {
+        rotativos.push(`📉 Alerta Crítico: Gastou ${taxaGasto.toFixed(1)}% das receitas. Congele compras.`);
+        maus.push(`Taxa de queima de capital altíssima (${taxaGasto.toFixed(1)}%). O risco de endividamento é extremo.`);
+        conselhos.push("Congele imediatamente compras não essenciais e adote um modo de sobrevivência até ao final do mês.");
+      } else if (taxaGasto > 50 && taxaGasto <= 80) {
+        rotativos.push(`⚠️ Atenção: Os gastos estão nos ${taxaGasto.toFixed(1)}%. Lembre-se da regra 50/30/20.`);
+        maus.push(`Gastos operacionais consumiram ${taxaGasto.toFixed(1)}% do orçamento.`);
+        conselhos.push("Tente alinhar o seu orçamento à regra dos 50/30/20. Evite desejos impulsivos.");
+      } else if (taxaGasto < 40 && despesasMes > 0) {
+        rotativos.push(`🌟 Genial! Consumiu apenas ${taxaGasto.toFixed(1)}%. Utilize este saldo para investir.`);
+        bons.push(`Controlo financeiro exemplar. Apenas ${taxaGasto.toFixed(1)}% do orçamento foi gasto.`);
+        conselhos.push("Aproveite a folga de capital para reforçar o Fundo de Emergência ou investir num Projeto.");
       }
     }
 
-    return insights;
+    const pagamentosAtrasados = pagamentosFixos.filter(p => !p.pagoEsteMes && diaHoje > p.diaVencimento);
+    const pagamentosCriticos = pagamentosFixos.filter(p => !p.pagoEsteMes && (p.diaVencimento - diaHoje <= 3) && (p.diaVencimento - diaHoje >= 0));
+
+    if (pagamentosAtrasados.length > 0) {
+      rotativos.push(`🚨 URGÊNCIA: Tem ${pagamentosAtrasados.length} pagamento(s) fixo(s) em atraso!`);
+      maus.push(`${pagamentosAtrasados.length} compromisso(s) fixo(s) em atraso. Juros de mora podem acumular.`);
+      conselhos.push(`Pague "${pagamentosAtrasados[0].nome}" com urgência para manter o seu bom nome no mercado.`);
+    }
+    if (pagamentosCriticos.length > 0) {
+      rotativos.push(`⏳ Prepare Kz ${pagamentosCriticos[0].valor.toLocaleString()} para o pagamento de "${pagamentosCriticos[0].nome}" em breve.`);
+      conselhos.push(`Crie uma provisão de Kz ${pagamentosCriticos[0].valor.toLocaleString()} hoje para honrar o próximo pagamento.`);
+    }
+
+    if (totalAPagar > saldoTotal && saldoTotal >= 0) {
+      rotativos.push(`💳 Alerta Vermelho: Dívidas superam o dinheiro disponível. Priorize o pagamento.`);
+      maus.push(`Passivo superior ao Ativo: As dívidas (Kz ${totalAPagar.toLocaleString()}) engoliram a sua liquidez.`);
+      conselhos.push("Priorize renegociar as dívidas mais tóxicas. Use o Método Bola de Neve para motivação rápida.");
+    } else if (totalAPagar > 0 && (totalAPagar / saldoTotal) > 0.4) {
+      rotativos.push(`📊 Cuidado: 40% do capital disponível seria engolido pelas dívidas.`);
+      maus.push(`Endividamento desconfortável: mais de 40% da liquidez está comprometida.`);
+    }
+
+    if (totalAReceber > 0) {
+      const maiorDevedor = dividas.filter(d => !d.paga && d.tipo === 'a_receber').sort((a,b) => b.valor - a.valor)[0];
+      if (maiorDevedor) {
+        rotativos.push(`💰 Tem Kz ${totalAReceber.toLocaleString()} a receber na rua.`);
+        bons.push(`Património não cobrado de Kz ${totalAReceber.toLocaleString()} na posse de terceiros.`);
+        conselhos.push(`Aja de forma proativa. Envie um lembrete educado ao seu maior devedor (${maiorDevedor.pessoa}).`);
+      }
+    }
+
+    const kixikilasAtivas = kixikilas.filter(k => k.status === 'ativo' || k.status === 'em_andamento' || k.id);
+    if (kixikilasAtivas.length > 0) {
+       rotativos.push(`🤝 Não se esqueça de reservar o valor das quotas das suas Kixikilas.`);
+       conselhos.push(`Mantenha a reputação honrando a sua quota nas ${kixikilasAtivas.length} Kixikila(s) ativas.`);
+    }
+
+    const projetosEmAndamento = projetos.filter(p => p.valorGuardado < p.objetivo);
+    if (projetosEmAndamento.length > 0) {
+      const projetoMaisProximo = projetosEmAndamento.sort((a, b) => (b.valorGuardado/b.objetivo) - (a.valorGuardado/a.objetivo))[0];
+      const percentagem = ((projetoMaisProximo.valorGuardado / projetoMaisProximo.objetivo) * 100).toFixed(1);
+      
+      if (percentagem > 80) {
+        rotativos.push(`🎯 O projeto "${projetoMaisProximo.nome}" está a ${percentagem}%! Falta pouco.`);
+        bons.push(`Projeto "${projetoMaisProximo.nome}" quase concluído (${percentagem}%).`);
+        conselhos.push(`Faltam só Kz ${(projetoMaisProximo.objetivo - projetoMaisProximo.valorGuardado).toLocaleString()}! Esforço final para fechar o projeto e celebrar.`);
+      } else if (saldoTotal > 100000 && receitasMes > despesasMes && pagamentosAtrasados.length === 0) {
+        rotativos.push(`💡 Tem saldo positivo. Deposite um extra no projeto "${projetoMaisProximo.nome}".`);
+        bons.push("Excesso de liquidez na conta. Ambiente propício ao crescimento de projetos.");
+      }
+    }
+
+    if (bons.length === 0 && maus.length === 0 && conselhos.length === 0) {
+       rotativos.push("👋 Olá! Registe despesas ou receitas para eu analisar o seu perfil.");
+       conselhos.push("Comece por registar o seu salário e despesas no separador Transações. O motor analítico precisa de dados.");
+    }
+
+    if (bons.length > 0 && maus.length === 0 && pagamentosAtrasados.length === 0 && totalAPagar === 0) {
+       rotativos.push("✨ Perfeição Financeira: Sem dívidas e saldo positivo. Continue assim!");
+       bons.push("Perfil Classe A: Nenhuma dívida tóxica, saldo robusto e controlo de despesas exemplar.");
+    }
+
+    return { rotativos, profundos: { bons, maus, conselhos } };
   };
   
   const dataDividas = [
@@ -209,35 +227,19 @@ export default function DashboardHome({ isAdmin }) {
   const aiInsights = generateAIAdvice();
 
   useEffect(() => {
-    if (aiInsights.length <= 1) return;
-    
-    // Rotacionar as dicas a cada 5 segundos para ser mais dinâmico
+    if (aiInsights.rotativos.length <= 1) return;
     const interval = setInterval(() => {
-      setCurrentInsightIndex((prevIndex) => (prevIndex + 1) % aiInsights.length);
+      setCurrentInsightIndex((prevIndex) => (prevIndex + 1) % aiInsights.rotativos.length);
     }, 5000);
-
     return () => clearInterval(interval);
-  }, [aiInsights.length]);
+  }, [aiInsights.rotativos.length]);
 
-  // Se o índice atual for maior que o número de insights (por exemplo, ao resolver uma dívida), volta ao 0
-  const activeInsight = aiInsights[currentInsightIndex] || aiInsights[0];
+  const activeInsight = aiInsights.rotativos[currentInsightIndex] || aiInsights.rotativos[0];
 
   return (
     <>
       {/* Yeto AI Smart Card */}
-      <div style={{
-        background: 'linear-gradient(135deg, #1c1c1e 0%, #2c2c2e 100%)',
-        borderRadius: '20px',
-        padding: '1.5rem 2rem',
-        marginBottom: '2rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '1.5rem',
-        boxShadow: '0 15px 30px rgba(0,0,0,0.15)',
-        border: '1px solid rgba(255, 179, 0, 0.2)',
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
+      <div className="yeto-ai-card">
         {!usuario?.isPremium && (
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
@@ -251,7 +253,7 @@ export default function DashboardHome({ isAdmin }) {
           </div>
         )}
         <div style={{ fontSize: '3rem', filter: 'drop-shadow(0 0 10px rgba(255,179,0,0.5))' }}>🤖</div>
-        <div>
+        <div className="yeto-ai-card-content">
           <h3 style={{ color: '#ffb300', margin: '0 0 1rem 0', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             Yeto AI <span style={{ fontSize: '0.7rem', background: 'rgba(255,179,0,0.2)', padding: '2px 8px', borderRadius: '10px', color: '#ffb300' }}>BETA</span>
             {aiInsights.length > 1 && (
@@ -266,7 +268,80 @@ export default function DashboardHome({ isAdmin }) {
             </p>
           </div>
         </div>
+        <div className="yeto-ai-action">
+          <button 
+            className="btn btn-glass" 
+            onClick={() => setShowAIModal(true)}
+            style={{ padding: '0.8rem 1.5rem', fontWeight: 'bold', border: '1px solid #ffb300', color: '#ffb300' }}
+            disabled={!usuario?.isPremium && !isAdmin}
+          >
+            Ver Análise Profunda
+          </button>
+        </div>
       </div>
+
+      {showAIModal && (
+        <div className="sobre-modal-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="sobre-modal-container" style={{ maxWidth: '700px', width: '90%', padding: '2.5rem', background: '#fff', borderRadius: '24px', maxHeight: '85vh', overflowY: 'auto' }}>
+            <button className="sobre-modal-close" onClick={() => setShowAIModal(false)}>×</button>
+            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+              <div style={{ fontSize: '3.5rem', marginBottom: '1rem', display: 'inline-block', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' }}>🧠</div>
+              <h2 style={{ color: '#373392', fontSize: '2rem', margin: '0 0 0.5rem 0' }}>Análise Profunda do Yeto AI</h2>
+              <p style={{ color: '#555' }}>Auditoria completa ao seu perfil financeiro.</p>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* O que está bom */}
+              <div style={{ background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '1.5rem', borderRadius: '16px' }}>
+                <h3 style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 1rem 0' }}>
+                  <span>🟢</span> Pontos Fortes (O que está bem)
+                </h3>
+                {aiInsights.profundos.bons.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#333', lineHeight: '1.6' }}>
+                    {aiInsights.profundos.bons.map((item, i) => <li key={i}>{item}</li>)}
+                  </ul>
+                ) : (
+                  <p style={{ color: '#666', margin: 0, fontStyle: 'italic' }}>Não identificámos grandes pontos fortes de momento. Organize as suas receitas!</p>
+                )}
+              </div>
+
+              {/* O que está mal */}
+              <div style={{ background: 'rgba(244, 91, 91, 0.05)', border: '1px solid rgba(244, 91, 91, 0.2)', padding: '1.5rem', borderRadius: '16px' }}>
+                <h3 style={{ color: '#f45b5b', display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 1rem 0' }}>
+                  <span>🔴</span> Pontos de Atenção (O que está mal)
+                </h3>
+                {aiInsights.profundos.maus.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#333', lineHeight: '1.6' }}>
+                    {aiInsights.profundos.maus.map((item, i) => <li key={i}>{item}</li>)}
+                  </ul>
+                ) : (
+                  <p style={{ color: '#666', margin: 0, fontStyle: 'italic' }}>Excelente! Não tem fatores críticos negativos atualmente.</p>
+                )}
+              </div>
+
+              {/* Conselhos Estratégicos */}
+              <div style={{ background: 'rgba(255, 179, 0, 0.05)', border: '1px solid rgba(255, 179, 0, 0.3)', padding: '1.5rem', borderRadius: '16px' }}>
+                <h3 style={{ color: '#d97706', display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 1rem 0' }}>
+                  <span>💡</span> Conselho Estratégico Yeto AI
+                </h3>
+                {aiInsights.profundos.conselhos.length > 0 ? (
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#333', lineHeight: '1.6' }}>
+                    {aiInsights.profundos.conselhos.map((item, i) => <li key={i} style={{ marginBottom: '0.5rem' }}>{item}</li>)}
+                  </ul>
+                ) : (
+                  <p style={{ color: '#666', margin: 0, fontStyle: 'italic' }}>Continue a gerir as suas finanças de forma estável. Sem conselhos urgentes de momento.</p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginTop: '2.5rem', textAlign: 'center' }}>
+               <button className="btn btn-primary btn-pill" onClick={() => setShowAIModal(false)} style={{ padding: '0.8rem 3rem' }}>
+                 Entendido
+               </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Action Bar */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
