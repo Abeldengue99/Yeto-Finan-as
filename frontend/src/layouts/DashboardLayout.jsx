@@ -1,16 +1,33 @@
 import React, { useState } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
+import { useAdmin } from '../contexts/AdminContext';
 import Modal from '../components/Modal';
 import GlobalAlert from '../components/GlobalAlert';
 
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData } = useFinance();
+  const { systemSettings } = useAdmin();
   
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const unreadCount = notificacoes.filter(n => !n.lida).length;
+
+  if (systemSettings?.maintenanceMode && !isAdmin) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-light)', textAlign: 'center', padding: '2rem' }}>
+        <h1 style={{ fontSize: '4rem', marginBottom: '1rem' }}>🚧</h1>
+        <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>Em Manutenção</h2>
+        <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', lineHeight: '1.6' }}>
+          O Yeto Finanças encontra-se atualmente em manutenção para aplicar novas funcionalidades e garantir maior segurança. Voltaremos muito em breve!
+        </p>
+        <button className="btn btn-primary btn-pill" onClick={onLogout} style={{ marginTop: '2rem' }}>
+          Terminar Sessão
+        </button>
+      </div>
+    );
+  }
 
   const handleProfileSave = (e) => {
     e.preventDefault();
@@ -158,6 +175,20 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
       {/* Main Content */}
       <main className="dashboard-main">
+        {systemSettings?.globalAlert?.active && (
+          <div style={{ 
+            background: `var(--${systemSettings.globalAlert.type}-color, var(--accent-color))`, 
+            color: 'white', 
+            padding: '0.8rem 2rem', 
+            textAlign: 'center', 
+            fontWeight: 'bold', 
+            fontSize: '0.9rem',
+            letterSpacing: '0.5px'
+          }}>
+            {systemSettings.globalAlert.message}
+          </div>
+        )}
+        
         {/* Top Bar */}
         <header className="dashboard-topbar">
           <div className="search-bar">

@@ -3,34 +3,48 @@ import { useAdmin } from '../../contexts/AdminContext';
 import { useFinance } from '../../contexts/FinanceContext';
 
 export default function AdminSettings() {
-  const { premiumPrice, setPremiumPrice, addLog } = useAdmin();
+  const { planPrices, setPlanPrices, systemSettings, setSystemSettings, addLog } = useAdmin();
   const { adicionarNotificacao } = useFinance();
   
-  const [novoPreco, setNovoPreco] = useState(premiumPrice);
-  const [mensagem, setMensagem] = useState('');
-  const [titulo, setTitulo] = useState('');
+  const [novosPrecos, setNovosPrecos] = useState(planPrices);
+  const [mensagem, setMensagem] = useState(systemSettings.globalAlert.message);
+  const [tipoAlerta, setTipoAlerta] = useState(systemSettings.globalAlert.type);
+  const [isAlertaAtivo, setIsAlertaAtivo] = useState(systemSettings.globalAlert.active);
 
   const handlePriceUpdate = (e) => {
     e.preventDefault();
-    if (novoPreco === premiumPrice) return;
-    
-    if (window.confirm(`Tem a certeza que deseja atualizar o preço do Premium para ${novoPreco} Kz?`)) {
-      setPremiumPrice(Number(novoPreco));
-      addLog(`Preço do plano Premium atualizado de ${premiumPrice} para ${novoPreco} Kz`, 'warning');
-      adicionarNotificacao('Sucesso', 'Preço atualizado com sucesso!');
+    if (window.confirm('Tem a certeza que deseja atualizar o preçário dos planos?')) {
+      setPlanPrices({
+        semestral: Number(novosPrecos.semestral),
+        anual: Number(novosPrecos.anual)
+      });
+      addLog(`Preçário atualizado (Semestral: ${novosPrecos.semestral}Kz | Anual: ${novosPrecos.anual}Kz)`, 'warning');
+      adicionarNotificacao('Sucesso', 'Preçário atualizado com sucesso!');
+    }
+  };
+
+  const handleSystemStatusUpdate = (modo, valor) => {
+    if (window.confirm(`Tem a certeza que deseja alterar o estado do sistema?`)) {
+      setSystemSettings(prev => ({ ...prev, [modo]: valor }));
+      addLog(`Alteração de Sistema: ${modo} definido para ${valor ? 'Ativo' : 'Inativo'}`, valor ? 'warning' : 'success');
+      adicionarNotificacao('Sistema Atualizado', `A configuração de automação foi alterada.`);
     }
   };
 
   const handleBroadcast = (e) => {
     e.preventDefault();
-    if (!titulo || !mensagem) return;
-
-    if (window.confirm('Tem a certeza que deseja enviar esta notificação para TODOS os utilizadores?')) {
-      adicionarNotificacao(titulo, mensagem);
-      addLog(`Notificação Global enviada: "${titulo}"`, 'info');
-      adicionarNotificacao('Sucesso', 'Comunicado enviado com sucesso para todos os utilizadores!');
-      setTitulo('');
-      setMensagem('');
+    if (window.confirm('Tem a certeza que deseja aplicar este aviso global?')) {
+      setSystemSettings(prev => ({
+        ...prev,
+        globalAlert: { active: isAlertaAtivo, type: tipoAlerta, message: mensagem }
+      }));
+      if (isAlertaAtivo) {
+        addLog(`Aviso Global Ativo: "${mensagem}"`, 'info');
+        adicionarNotificacao('Aviso Atualizado', 'O banner global está agora visível para os utilizadores.');
+      } else {
+        addLog(`Aviso Global Removido`, 'success');
+        adicionarNotificacao('Aviso Removido', 'O banner global foi ocultado.');
+      }
     }
   };
 
@@ -38,72 +52,117 @@ export default function AdminSettings() {
     <div style={{ paddingBottom: '2rem' }}>
       <div style={{ marginBottom: '2rem' }}>
         <h1 className="page-title">⚙️ Configurações Globais</h1>
-        <p className="text-secondary">Controlo centralizado das definições do Yeto Finanças</p>
+        <p className="text-secondary">Controlo centralizado das automações e definições do Yeto Finanças</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
         
-        {/* Painel de Preços */}
-        <div className="dash-card">
-          <h3 className="section-title">Preçário</h3>
+        {/* Painel de Automação de Sistema */}
+        <div className="dash-card" style={{ borderLeft: '4px solid var(--danger-color)' }}>
+          <h3 className="section-title">Automações do Sistema</h3>
           <p className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-            Atualize o custo da subscrição mensal do Plano Premium. Esta alteração afetará os novos pagamentos.
+            Ações críticas de manutenção e acesso.
+          </p>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '1rem', background: 'var(--bg-primary)', borderRadius: '8px' }}>
+            <div>
+              <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>Modo de Manutenção</h4>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Tirar o site do ar para os utilizadores normais</p>
+            </div>
+            <label className="switch">
+              <input type="checkbox" checked={systemSettings.maintenanceMode} onChange={(e) => handleSystemStatusUpdate('maintenanceMode', e.target.checked)} />
+              <span className="slider round"></span>
+            </label>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--bg-primary)', borderRadius: '8px' }}>
+            <div>
+              <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>Novos Registos</h4>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Permitir a criação de novas contas</p>
+            </div>
+            <label className="switch">
+              <input type="checkbox" checked={systemSettings.allowRegistrations} onChange={(e) => handleSystemStatusUpdate('allowRegistrations', e.target.checked)} />
+              <span className="slider round"></span>
+            </label>
+          </div>
+        </div>
+
+        {/* Painel de Preços (Pacotes) */}
+        <div className="dash-card">
+          <h3 className="section-title">Preçário (Pacotes)</h3>
+          <p className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+            Atualize o custo das subscrições. As alterações afetarão os novos pagamentos.
           </p>
 
           <form onSubmit={handlePriceUpdate}>
-            <div className="input-group">
-              <label>Preço Atual (Kz)</label>
-              <input 
-                type="number" 
-                value={novoPreco} 
-                onChange={(e) => setNovoPreco(e.target.value)} 
-                className="qt-input" 
-                style={{ fontSize: '1.2rem', fontWeight: 'bold' }}
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+              <div className="input-group">
+                <label>Plano Semestral (Kz)</label>
+                <input type="number" value={novosPrecos.semestral} onChange={(e) => setNovosPrecos({...novosPrecos, semestral: e.target.value})} className="qt-input" />
+              </div>
+              <div className="input-group">
+                <label>Plano Anual (Kz)</label>
+                <input type="number" value={novosPrecos.anual} onChange={(e) => setNovosPrecos({...novosPrecos, anual: e.target.value})} className="qt-input" />
+              </div>
             </div>
             <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1rem', padding: '0.8rem' }}>
-              Atualizar Preço
+              Atualizar Preços
             </button>
           </form>
         </div>
+      </div>
 
-        {/* Painel de Comunicados */}
-        <div className="dash-card">
-          <h3 className="section-title">Comunicados Globais</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem' }}>
+        {/* Painel de Comunicados / Banner */}
+        <div className="dash-card" style={{ borderLeft: '4px solid var(--accent-color)' }}>
+          <h3 className="section-title">Aviso Global (Banner de Nova Versão/Manutenção)</h3>
           <p className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-            Envie uma notificação que aparecerá no "Sininho" de todos os utilizadores (Broadcast).
+            Apresente uma mensagem no topo do ecrã de todos os utilizadores para avisos urgentes ou atualizações.
           </p>
 
           <form onSubmit={handleBroadcast}>
-            <div className="input-group">
-              <label>Título do Comunicado</label>
-              <input 
-                type="text" 
-                value={titulo} 
-                onChange={(e) => setTitulo(e.target.value)} 
-                className="qt-input" 
-                placeholder="Ex: Manutenção Agendada"
-                required
-              />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '1rem', marginBottom: '1rem' }}>
+              <div className="input-group">
+                <label>Tipo de Alerta</label>
+                <select value={tipoAlerta} onChange={(e) => setTipoAlerta(e.target.value)} className="qt-input" style={{ width: '100%', padding: '0.8rem' }}>
+                  <option value="info">ℹ️ Informativo (Azul)</option>
+                  <option value="warning">⚠️ Aviso (Amarelo)</option>
+                  <option value="danger">🚨 Urgente (Vermelho)</option>
+                  <option value="success">✅ Sucesso (Verde)</option>
+                </select>
+              </div>
+              <div className="input-group">
+                <label>Status do Banner</label>
+                <div style={{ display: 'flex', alignItems: 'center', height: '100%', gap: '1rem' }}>
+                  <label className="switch">
+                    <input type="checkbox" checked={isAlertaAtivo} onChange={(e) => setIsAlertaAtivo(e.target.checked)} />
+                    <span className="slider round"></span>
+                  </label>
+                  <span style={{ fontWeight: 'bold', color: isAlertaAtivo ? 'var(--success-color)' : 'var(--text-secondary)' }}>
+                    {isAlertaAtivo ? 'Ativo (Visível para Todos)' : 'Inativo (Oculto)'}
+                  </span>
+                </div>
+              </div>
             </div>
+
             <div className="input-group" style={{ marginTop: '1rem' }}>
-              <label>Mensagem</label>
+              <label>Mensagem a ser Apresentada</label>
               <textarea 
                 value={mensagem} 
                 onChange={(e) => setMensagem(e.target.value)} 
                 className="qt-input" 
-                placeholder="Escreva aqui a mensagem para os utilizadores..."
-                rows="4"
-                required
+                placeholder="Ex: A versão 2.0 do Yeto Finanças já está disponível! Novas funcionalidades foram adicionadas..."
+                rows="3"
+                required={isAlertaAtivo}
                 style={{ resize: 'none' }}
               />
             </div>
+            
             <button type="submit" className="btn" style={{ background: 'var(--accent-gradient)', color: 'white', width: '100%', marginTop: '1rem', padding: '0.8rem', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-              📢 Enviar para Todos
+              📢 Guardar e Aplicar Configuração do Banner
             </button>
           </form>
         </div>
-
       </div>
     </div>
   );

@@ -9,7 +9,16 @@ export function useAdmin() {
 export function AdminProvider({ children }) {
   const [users, setUsers] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
-  const [premiumPrice, setPremiumPrice] = useState(5999);
+  const [planPrices, setPlanPrices] = useState({
+    semestral: 4999,
+    anual: 7999
+  });
+  
+  const [systemSettings, setSystemSettings] = useState({
+    maintenanceMode: false,
+    allowRegistrations: true,
+    globalAlert: { active: false, type: 'info', message: '' }
+  });
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -89,7 +98,7 @@ export function AdminProvider({ children }) {
     // Remove dos pendentes
     setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
     
-    addLog(`Aprovado pagamento Premium de ${payment.nome} (${premiumPrice} Kz)`, 'success');
+    addLog(`Aprovado pagamento Premium de ${payment.nome}`, 'success');
   };
 
   const rejectPayment = (paymentId) => {
@@ -122,8 +131,10 @@ export function AdminProvider({ children }) {
   const value = {
     users,
     pendingPayments,
-    premiumPrice,
-    setPremiumPrice,
+    planPrices,
+    setPlanPrices,
+    systemSettings,
+    setSystemSettings,
     logs,
     addLog,
     getStats,

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
+import { useAdmin } from '../contexts/AdminContext';
 
 export default function Planos({ user }) {
   const [showModal, setShowModal] = useState(false);
@@ -7,6 +8,12 @@ export default function Planos({ user }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const { adicionarNotificacao } = useFinance();
+  const adminContext = useAdmin();
+
+  const precoSemestral = adminContext?.planPrices?.semestral || 4999;
+  const precoAnual = adminContext?.planPrices?.anual || 7999;
+  const mensalEquivSemestral = Math.round(precoSemestral / 6);
+  const mensalEquivAnual = Math.round(precoAnual / 12);
 
   // Polling: verifica o estado dos comprovativos pendentes a cada 30s
   useEffect(() => {
@@ -130,10 +137,10 @@ export default function Planos({ user }) {
           <h3 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', margin: '0 0 0.5rem 0' }}>Semestral</h3>
           <p className="text-secondary" style={{ margin: '0 0 1.5rem 0', fontSize: '0.9rem' }}>Acesso Premium durante 6 meses completos.</p>
           <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
-            4.999 <span style={{ fontSize: '1rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>Kz</span>
+            {precoSemestral.toLocaleString()} <span style={{ fontSize: '1rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>Kz</span>
           </div>
           <p style={{ fontSize: '0.85rem', color: 'var(--accent-color)', marginBottom: '2rem', fontWeight: '600' }}>
-            Equivale a ~833 Kz / mês
+            Equivale a ~{mensalEquivSemestral} Kz / mês
           </p>
           
           <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 2rem 0', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.8rem', fontSize: '0.9rem' }}>
@@ -164,10 +171,10 @@ export default function Planos({ user }) {
             <h3 style={{ fontSize: '1.5rem', color: 'white', margin: '0 0 0.5rem 0' }}>Anual (Premium)</h3>
             <p style={{ margin: '0 0 1.5rem 0', color: '#aaa', fontSize: '0.9rem' }}>A melhor escolha para paz de espírito financeira.</p>
             <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'white', marginBottom: '0.5rem' }}>
-              7.999 <span style={{ fontSize: '1rem', fontWeight: 'normal', color: '#aaa' }}>Kz</span>
+              {precoAnual.toLocaleString()} <span style={{ fontSize: '1rem', fontWeight: 'normal', color: '#aaa' }}>Kz</span>
             </div>
             <p style={{ fontSize: '0.85rem', color: '#ffb300', marginBottom: '2rem', fontWeight: '600' }}>
-              Equivale a ~666 Kz / mês (Poupas 37%!)
+              Equivale a ~{mensalEquivAnual} Kz / mês (Poupas 37%!)
             </p>
             
             <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 2rem 0', flex: 1, display: 'flex', flexDirection: 'column', gap: '0.8rem', fontSize: '0.9rem' }}>
