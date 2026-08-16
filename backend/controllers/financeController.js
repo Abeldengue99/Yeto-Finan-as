@@ -8,7 +8,9 @@ const OWNED_TABLES = new Set([
   'projects',
   'kixikila_groups',
   'foreign_currency',
-  'budgets'
+  'budgets',
+  'shopping_lists',
+  'shopping_list_items'
 ]);
 
 function isAdminRequest(req) {
@@ -64,13 +66,188 @@ function cleanBudgetCategory(value) {
   return String(value || '').trim().slice(0, 120);
 }
 
+function cleanShoppingText(value, maxLength = 120) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function getMonthBounds(monthKey) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const nextMonthStart = new Date(Date.UTC(year, month, 1));
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+  return {
+    year,
+    month,
+    monthStart,
+    nextMonthStart,
+    monthStartKey: `${monthKey}-01`,
+    lastDay
+  };
+}
+
+function formatDateKey(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function buildMonthDate(monthKey, day) {
+  const { year, month, lastDay } = getMonthBounds(monthKey);
+  const cleanDay = Math.max(1, Math.min(Number(day) || 1, lastDay));
+  return `${year}-${String(month).padStart(2, '0')}-${String(cleanDay).padStart(2, '0')}`;
+}
+
+function getKixikilaIntervalDays(periodicity) {
+  const text = String(periodicity || '').toLowerCase();
+  if (text.includes('semanal')) return 7;
+  if (text.includes('quinzenal')) return 15;
+  return 0;
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function getKixikilaDates(kixikila, monthKey) {
+  const { monthStart, nextMonthStart } = getMonthBounds(monthKey);
+  const startKey = formatDateKey(kixikila.start_date);
+  const intervalDays = getKixikilaIntervalDays(kixikila.periodicity);
+
+  if (!startKey) {
+    return [`${monthKey}-01`];
+  }
+
+  const startDate = new Date(`${startKey}T00:00:00Z`);
+  if (Number.isNaN(startDate.getTime()) || startDate >= nextMonthStart) return [];
+
+  if (!intervalDays) {
+    const dateKey = buildMonthDate(monthKey, startDate.getUTCDate());
+    const date = new Date(`${dateKey}T00:00:00Z`);
+    return date >= startDate && date < nextMonthStart ? [dateKey] : [];
+  }
+
+  let cursor = new Date(startDate);
+  while (cursor < monthStart) {
+    cursor = addDays(cursor, intervalDays);
+  }
+
+  const dates = [];
+  while (cursor < nextMonthStart) {
+    dates.push(formatDateKey(cursor));
+    cursor = addDays(cursor, intervalDays);
+  }
+
+  return dates;
+}
+
+function isSalaryEvent(row) {
+  const text = `${row.category || ''} ${row.description || ''}`.toLowerCase();
+  return /sal[aá]rio|ordenado|vencimento/.test(text);
+}
+
+function isInstallmentEvent(row) {
+  const text = `${row.category || ''} ${row.name || ''}`.toLowerCase();
+  return /presta[cç][aã]o|credito|cr[eé]dito|financiamento|emprestimo|empr[eé]stimo/.test(text);
+}
+
+function getForecastAnchor(monthKey) {
+  const today = new Date();
+  const currentMonthKey = today.toISOString().slice(0, 7);
+  const { year, month, lastDay } = getMonthBounds(monthKey);
+  const day = monthKey === currentMonthKey ? today.getDate() : 1;
+
+  return {
+    todayKey: buildMonthDate(monthKey, Math.min(day, lastDay)),
+    todayDay: Math.min(day, lastDay),
+    lastDay,
+    year,
+    month
+  };
+}
+
+function normalizeForecastTransaction(row) {
+  const type = row.type === 'income' ? 'entrada' : 'saida';
+  return {
+    id: row.id,
+    type,
+    category: row.category || 'Sem categoria',
+    description: row.description || '',
+    amount: Number(row.amount || 0),
+    date: formatDateKey(row.transaction_date)
+  };
+}
+
+function isCommittedExpense(transaction) {
+  const text = `${transaction.category} ${transaction.description}`.toLowerCase();
+  return /pagamento fixo|d[ií]vida|kixikila|projeto|divisa|c[aâ]mbio/.test(text);
+}
+
+function getMonthObligationDate(monthKey, dueDay) {
+  return buildMonthDate(monthKey, dueDay);
+}
+
+function pushDailyImpact(map, date, amount) {
+  map.set(date, Number(map.get(date) || 0) + Number(amount || 0));
+}
+
+function sortByDateThenAmount(a, b) {
+  if (a.date !== b.date) return a.date.localeCompare(b.date);
+  return Number(b.amount || 0) - Number(a.amount || 0);
+}
+
+function buildEmergencyPlan({ projectedEndBalance, shortageDay, remainingDays, dailyAverageExpense, frozenCategories, priorities, currentBalance }) {
+  const missingAmount = Math.max(0, -projectedEndBalance);
+  const suggestedDailyLimit = Math.max(0, Math.floor((currentBalance - priorities.totalCritical) / Math.max(1, remainingDays)));
+  const dailyCutNeeded = missingAmount > 0 ? Math.ceil(missingAmount / Math.max(1, remainingDays)) : 0;
+  const active = missingAmount > 0 || Boolean(shortageDay);
+  const severity = active ? 'critical' : projectedEndBalance < currentBalance * 0.15 ? 'attention' : 'stable';
+  const message = active
+    ? 'Há risco financeiro neste mês. Priorize contas essenciais, reduza gastos variáveis e congele categorias não essenciais.'
+    : severity === 'attention'
+      ? 'O mês ainda está controlado, mas a margem está curta. Evite assumir novos compromissos.'
+      : 'O mês está equilibrado. Continue a acompanhar entradas, saídas e compromissos futuros.';
+
+  const actions = [];
+  if (missingAmount > 0) {
+    actions.push(`Reduzir pelo menos Kz ${dailyCutNeeded.toLocaleString('pt-AO')} por dia até ao fim do mês.`);
+  }
+  if (frozenCategories.length > 0) {
+    actions.push(`Congelar temporariamente: ${frozenCategories.slice(0, 3).map(item => item.category).join(', ')}.`);
+  }
+  if (priorities.items.length > 0) {
+    actions.push('Pagar primeiro os compromissos marcados como prioridade alta.');
+  }
+  if (dailyAverageExpense > suggestedDailyLimit && suggestedDailyLimit > 0) {
+    actions.push(`Manter gastos variáveis abaixo de Kz ${suggestedDailyLimit.toLocaleString('pt-AO')} por dia.`);
+  }
+  if (actions.length === 0) {
+    actions.push('Manter o ritmo atual e rever o calendário antes de assumir novos gastos.');
+  }
+
+  return {
+    active,
+    severity,
+    message,
+    missingAmount,
+    dailyCutNeeded,
+    suggestedDailyLimit,
+    frozenCategories,
+    priorities: priorities.items,
+    actions
+  };
+}
+
 const getUserFinances = async (req, res) => {
   const { userId } = req.params;
 
   try {
     // 0. Fetch User Info
     const userRes = await pool.query(
-      'SELECT name, email, occupation, avatar_url, yeto_points, plan_type, created_at, plan_expires_at FROM users WHERE id = $1',
+      'SELECT name, email, occupation, avatar_url, yeto_points, plan_type, subscription_plan, created_at, plan_expires_at FROM users WHERE id = $1',
       [userId]
     );
     const user = userRes.rows[0];
@@ -233,6 +410,411 @@ const getBudgets = async (req, res) => {
   }
 };
 
+const getFinancialCalendar = async (req, res) => {
+  const { userId } = req.params;
+  const monthKey = getMonthKey(req.query.month);
+  const { monthStartKey } = getMonthBounds(monthKey);
+  const todayKey = formatDateKey(new Date());
+
+  try {
+    const [transactionsRes, fixedRes, debtsRes, projectsRes, kixikilasRes] = await Promise.all([
+      pool.query(
+        `SELECT id, type, category, description, amount, transaction_date
+         FROM transactions
+         WHERE user_id = $1
+           AND transaction_date >= $2::date
+           AND transaction_date < ($2::date + INTERVAL '1 month')
+         ORDER BY transaction_date ASC`,
+        [userId, monthStartKey]
+      ),
+      pool.query(
+        `SELECT id, name, category, amount, due_day, is_paid_this_month
+         FROM fixed_payments
+         WHERE user_id = $1
+         ORDER BY due_day ASC`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT id, person_name, type, amount, due_date, purpose, is_paid
+         FROM debts
+         WHERE user_id = $1
+           AND due_date >= $2::date
+           AND due_date < ($2::date + INTERVAL '1 month')
+         ORDER BY due_date ASC`,
+        [userId, monthStartKey]
+      ),
+      pool.query(
+        `SELECT id, name, category, target_amount, saved_amount, deadline
+         FROM projects
+         WHERE user_id = $1
+           AND deadline >= $2::date
+           AND deadline < ($2::date + INTERVAL '1 month')
+         ORDER BY deadline ASC`,
+        [userId, monthStartKey]
+      ),
+      pool.query(
+        `SELECT id, name, quota_value, hand_value, periodicity, start_date
+         FROM kixikila_groups
+         WHERE user_id = $1`,
+        [userId]
+      )
+    ]);
+
+    const events = [];
+
+    transactionsRes.rows.forEach(row => {
+      const isIncome = row.type === 'income';
+      const type = isIncome && isSalaryEvent(row) ? 'salario' : isIncome ? 'receita' : 'despesa';
+      events.push({
+        id: `transaction-${row.id}`,
+        sourceId: row.id,
+        source: 'transactions',
+        type,
+        direction: isIncome ? 'entrada' : 'saida',
+        title: isIncome && type === 'salario' ? `Salário: ${row.description}` : row.description,
+        description: row.category || '',
+        amount: Number(row.amount),
+        date: formatDateKey(row.transaction_date),
+        status: 'realizado'
+      });
+    });
+
+    fixedRes.rows.forEach(row => {
+      const date = buildMonthDate(monthKey, row.due_day);
+      const type = isInstallmentEvent(row) ? 'prestacao' : 'fixo';
+      events.push({
+        id: `fixed-${row.id}`,
+        sourceId: row.id,
+        source: 'fixed_payments',
+        type,
+        direction: 'saida',
+        title: row.name,
+        description: row.category || 'Pagamento fixo',
+        amount: Number(row.amount),
+        date,
+        status: row.is_paid_this_month ? 'pago' : date < todayKey ? 'atrasado' : 'pendente'
+      });
+    });
+
+    debtsRes.rows.forEach(row => {
+      const isReceivable = row.type === 'to_receive';
+      const date = formatDateKey(row.due_date);
+      events.push({
+        id: `debt-${row.id}`,
+        sourceId: row.id,
+        source: 'debts',
+        type: isReceivable ? 'divida_receber' : 'divida_pagar',
+        direction: isReceivable ? 'entrada' : 'saida',
+        title: isReceivable ? `Receber de ${row.person_name}` : `Pagar a ${row.person_name}`,
+        description: row.purpose || 'Dívida',
+        amount: Number(row.amount),
+        date,
+        status: row.is_paid ? 'pago' : date < todayKey ? 'atrasado' : 'pendente'
+      });
+    });
+
+    projectsRes.rows.forEach(row => {
+      const remaining = Math.max(0, Number(row.target_amount) - Number(row.saved_amount || 0));
+      events.push({
+        id: `project-${row.id}`,
+        sourceId: row.id,
+        source: 'projects',
+        type: 'meta',
+        direction: 'meta',
+        title: `Meta: ${row.name}`,
+        description: row.category || 'Projeto',
+        amount: remaining,
+        totalAmount: Number(row.target_amount),
+        savedAmount: Number(row.saved_amount || 0),
+        date: formatDateKey(row.deadline),
+        status: remaining <= 0 ? 'concluido' : 'pendente'
+      });
+    });
+
+    kixikilasRes.rows.forEach(row => {
+      getKixikilaDates(row, monthKey).forEach(date => {
+        events.push({
+          id: `kixikila-${row.id}-${date}`,
+          sourceId: row.id,
+          source: 'kixikila_groups',
+          type: 'kixikila',
+          direction: 'saida',
+          title: `Quota da Kixikila: ${row.name}`,
+          description: row.periodicity || 'Kixikila',
+          amount: Number(row.quota_value),
+          handAmount: Number(row.hand_value),
+          date,
+          status: date < todayKey ? 'vencido' : 'pendente'
+        });
+      });
+    });
+
+    const orderedEvents = events
+      .filter(event => event.date?.startsWith(monthKey))
+      .sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.title.localeCompare(b.title);
+      });
+
+    const summary = orderedEvents.reduce((acc, event) => {
+      if (event.direction === 'entrada') acc.income += Number(event.amount || 0);
+      if (event.direction === 'saida') acc.expense += Number(event.amount || 0);
+      if (event.direction === 'meta') acc.goals += Number(event.amount || 0);
+      if (event.status === 'atrasado' || event.status === 'vencido') acc.overdue += 1;
+      if (event.status === 'pendente') acc.pending += 1;
+      return acc;
+    }, {
+      income: 0,
+      expense: 0,
+      goals: 0,
+      pending: 0,
+      overdue: 0
+    });
+
+    res.json({
+      month: monthKey,
+      events: orderedEvents,
+      summary: {
+        ...summary,
+        forecast: summary.income - summary.expense,
+        totalEvents: orderedEvents.length
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao carregar calendário financeiro:', error);
+    res.status(500).json({ error: 'Erro ao carregar calendário financeiro.' });
+  }
+};
+
+const getMonthEndForecast = async (req, res) => {
+  const { userId } = req.params;
+  const monthKey = getMonthKey(req.query.month);
+  const { monthStartKey } = getMonthBounds(monthKey);
+  const { todayKey, todayDay, lastDay } = getForecastAnchor(monthKey);
+  const remainingDays = Math.max(0, lastDay - todayDay);
+
+  try {
+    const [accountsRes, transactionsRes, fixedRes, debtsRes, kixikilasRes, budgetsRes] = await Promise.all([
+      pool.query('SELECT COALESCE(SUM(balance), 0) AS balance FROM accounts WHERE user_id = $1', [userId]),
+      pool.query(
+        `SELECT id, type, category, description, amount, transaction_date
+         FROM transactions
+         WHERE user_id = $1
+           AND transaction_date >= $2::date
+           AND transaction_date <= $3::date
+         ORDER BY transaction_date ASC`,
+        [userId, monthStartKey, todayKey]
+      ),
+      pool.query(
+        `SELECT id, name, category, amount, due_day, is_paid_this_month
+         FROM fixed_payments
+         WHERE user_id = $1
+         ORDER BY due_day ASC`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT id, person_name, type, amount, due_date, purpose, is_paid
+         FROM debts
+         WHERE user_id = $1
+           AND is_paid = FALSE
+           AND due_date >= $2::date
+           AND due_date < ($2::date + INTERVAL '1 month')
+         ORDER BY due_date ASC`,
+        [userId, monthStartKey]
+      ),
+      pool.query(
+        `SELECT id, name, quota_value, hand_value, periodicity, start_date
+         FROM kixikila_groups
+         WHERE user_id = $1`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT category, monthly_limit
+         FROM budgets
+         WHERE user_id = $1
+           AND month_key = $2`,
+        [userId, monthKey]
+      )
+    ]);
+
+    const currentBalance = Number(accountsRes.rows[0]?.balance || 0);
+    const transactions = transactionsRes.rows.map(normalizeForecastTransaction);
+    const incomeToDate = transactions
+      .filter(item => item.type === 'entrada')
+      .reduce((sum, item) => sum + item.amount, 0);
+    const expenseToDate = transactions
+      .filter(item => item.type === 'saida')
+      .reduce((sum, item) => sum + item.amount, 0);
+    const variableExpenses = transactions.filter(item => item.type === 'saida' && !isCommittedExpense(item));
+    const variableExpenseToDate = variableExpenses.reduce((sum, item) => sum + item.amount, 0);
+    const dailyAverageExpense = variableExpenseToDate / Math.max(1, todayDay);
+    const remainingVariableForecast = Math.round(dailyAverageExpense * remainingDays);
+
+    const dailyImpacts = new Map();
+    const commitments = [];
+    const receivables = [];
+
+    fixedRes.rows
+      .filter(row => !row.is_paid_this_month)
+      .forEach(row => {
+        const date = getMonthObligationDate(monthKey, row.due_day);
+        if (date < todayKey) return;
+
+        const item = {
+          type: isInstallmentEvent(row) ? 'prestacao' : 'fixo',
+          title: row.name,
+          category: row.category || 'Pagamento fixo',
+          amount: Number(row.amount || 0),
+          date,
+          priority: row.due_day - todayDay <= 5 ? 'alta' : 'normal'
+        };
+        commitments.push(item);
+        pushDailyImpact(dailyImpacts, date, -item.amount);
+      });
+
+    debtsRes.rows.forEach(row => {
+      const date = formatDateKey(row.due_date);
+      const amount = Number(row.amount || 0);
+
+      if (row.type === 'to_receive') {
+        const item = {
+          type: 'divida_receber',
+          title: `Receber de ${row.person_name}`,
+          category: row.purpose || 'Dívida a receber',
+          amount,
+          date
+        };
+        receivables.push(item);
+        if (date >= todayKey) pushDailyImpact(dailyImpacts, date, amount);
+        return;
+      }
+
+      if (date >= todayKey) {
+        const item = {
+          type: 'divida_pagar',
+          title: `Pagar a ${row.person_name}`,
+          category: row.purpose || 'Dívida a pagar',
+          amount,
+          date,
+          priority: date <= todayKey ? 'alta' : 'normal'
+        };
+        commitments.push(item);
+        pushDailyImpact(dailyImpacts, date, -amount);
+      }
+    });
+
+    kixikilasRes.rows.forEach(row => {
+      getKixikilaDates(row, monthKey)
+        .filter(date => date >= todayKey)
+        .forEach(date => {
+          const item = {
+            type: 'kixikila',
+            title: `Quota da Kixikila: ${row.name}`,
+            category: row.periodicity || 'Kixikila',
+            amount: Number(row.quota_value || 0),
+            date,
+            priority: 'normal'
+          };
+          commitments.push(item);
+          pushDailyImpact(dailyImpacts, date, -item.amount);
+        });
+    });
+
+    const upcomingCommitments = commitments.reduce((sum, item) => sum + item.amount, 0);
+    const expectedReceivables = receivables
+      .filter(item => item.date >= todayKey)
+      .reduce((sum, item) => sum + item.amount, 0);
+    const projectedEndBalance = Math.round(currentBalance + expectedReceivables - upcomingCommitments - remainingVariableForecast);
+
+    let simulatedBalance = currentBalance;
+    let shortageDay = null;
+    for (let day = todayDay; day <= lastDay; day += 1) {
+      const date = buildMonthDate(monthKey, day);
+      if (day > todayDay) simulatedBalance -= dailyAverageExpense;
+      simulatedBalance += Number(dailyImpacts.get(date) || 0);
+      if (simulatedBalance < 0 && !shortageDay) {
+        shortageDay = date;
+        break;
+      }
+    }
+
+    const expensesByCategory = variableExpenses.reduce((acc, item) => {
+      acc[item.category] = (acc[item.category] || 0) + item.amount;
+      return acc;
+    }, {});
+    const budgetByCategory = budgetsRes.rows.reduce((acc, row) => {
+      acc[row.category] = Number(row.monthly_limit || 0);
+      return acc;
+    }, {});
+    const frozenCategories = Object.entries(expensesByCategory)
+      .map(([category, amount]) => {
+        const limit = budgetByCategory[category] || 0;
+        const overLimit = limit > 0 && amount >= limit * 0.8;
+        const discretionary = /lazer|restaurante|fast|outros|roupa|viagem|evento|divers[aã]o/i.test(category);
+        return {
+          category,
+          spent: Math.round(amount),
+          limit,
+          reason: overLimit ? 'perto do limite' : discretionary ? 'gasto não essencial' : 'maior impacto no mês',
+          score: (overLimit ? 2 : 0) + (discretionary ? 2 : 0) + amount / 100000
+        };
+      })
+      .filter(item => item.score >= 1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    const priorityItems = commitments
+      .slice()
+      .sort(sortByDateThenAmount)
+      .slice(0, 6);
+    const totalCritical = priorityItems
+      .filter(item => item.priority === 'alta' || item.date <= buildMonthDate(monthKey, todayDay + 5))
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    const emergency = buildEmergencyPlan({
+      projectedEndBalance,
+      shortageDay,
+      remainingDays,
+      dailyAverageExpense,
+      frozenCategories,
+      priorities: { totalCritical, items: priorityItems },
+      currentBalance
+    });
+
+    const message = shortageDay
+      ? `Se continuar assim, pode faltar dinheiro antes do dia ${new Date(`${shortageDay}T00:00:00`).getDate()}.`
+      : projectedEndBalance < 0
+        ? `Se continuar assim, terminará o mês com falta de Kz ${Math.abs(projectedEndBalance).toLocaleString('pt-AO')}.`
+        : `Se continuar assim, terminará o mês com cerca de Kz ${projectedEndBalance.toLocaleString('pt-AO')}.`;
+
+    res.json({
+      month: monthKey,
+      access: {
+        annualOnly: true
+      },
+      forecast: {
+        message,
+        currentBalance: Math.round(currentBalance),
+        incomeToDate: Math.round(incomeToDate),
+        expenseToDate: Math.round(expenseToDate),
+        variableExpenseToDate: Math.round(variableExpenseToDate),
+        dailyAverageExpense: Math.round(dailyAverageExpense),
+        remainingVariableForecast,
+        upcomingCommitments: Math.round(upcomingCommitments),
+        expectedReceivables: Math.round(expectedReceivables),
+        projectedEndBalance,
+        shortageDay,
+        today: todayKey,
+        daysRemaining: remainingDays
+      },
+      emergency
+    });
+  } catch (error) {
+    console.error('Erro ao calcular previsão do fim do mês:', error);
+    res.status(500).json({ error: 'Erro ao calcular previsão do fim do mês.' });
+  }
+};
+
 const upsertBudget = async (req, res) => {
   let { userId, category, month, monthlyLimit } = req.body;
   userId = getRequestUserId(req, userId);
@@ -288,6 +870,278 @@ const deleteBudget = async (req, res) => {
   } catch (error) {
     console.error('Erro ao eliminar orçamento:', error);
     res.status(500).json({ error: 'Erro ao eliminar orçamento.' });
+  }
+};
+
+function mapShoppingList(row, items = []) {
+  const listItems = items.map(item => ({
+    id: item.id,
+    nome: item.item_name,
+    categoria: item.category,
+    quantidade: Number(item.quantity || 1),
+    precoEstimado: Number(item.estimated_price || 0),
+    total: Number(item.quantity || 1) * Number(item.estimated_price || 0),
+    comprado: Boolean(item.is_checked)
+  }));
+
+  return {
+    id: row.id,
+    nome: row.name,
+    mes: row.month_key,
+    totalEstimado: listItems.reduce((sum, item) => sum + item.total, 0),
+    itens: listItems
+  };
+}
+
+const getShoppingLists = async (req, res) => {
+  const { userId } = req.params;
+  const monthKey = getMonthKey(req.query.month);
+  const { monthStartKey } = getMonthBounds(monthKey);
+
+  try {
+    const [listsRes, itemsRes, budgetsRes, expensesRes] = await Promise.all([
+      pool.query(
+        `SELECT id, name, month_key
+         FROM shopping_lists
+         WHERE user_id = $1 AND month_key = $2
+         ORDER BY created_at DESC`,
+        [userId, monthKey]
+      ),
+      pool.query(
+        `SELECT sli.*
+         FROM shopping_list_items sli
+         INNER JOIN shopping_lists sl ON sl.id = sli.list_id
+         WHERE sli.user_id = $1 AND sl.month_key = $2
+         ORDER BY sli.created_at ASC`,
+        [userId, monthKey]
+      ),
+      pool.query(
+        `SELECT category, monthly_limit
+         FROM budgets
+         WHERE user_id = $1 AND month_key = $2`,
+        [userId, monthKey]
+      ),
+      pool.query(
+        `SELECT category, COALESCE(SUM(amount), 0) AS spent
+         FROM transactions
+         WHERE user_id = $1
+           AND type = 'expense'
+           AND transaction_date >= $2::date
+           AND transaction_date < ($2::date + INTERVAL '1 month')
+         GROUP BY category`,
+        [userId, monthStartKey]
+      )
+    ]);
+
+    const itemsByList = itemsRes.rows.reduce((acc, item) => {
+      acc[item.list_id] = acc[item.list_id] || [];
+      acc[item.list_id].push(item);
+      return acc;
+    }, {});
+    const lists = listsRes.rows.map(row => mapShoppingList(row, itemsByList[row.id] || []));
+    const plannedByCategory = itemsRes.rows.reduce((acc, item) => {
+      const category = item.category || 'Sem categoria';
+      acc[category] = (acc[category] || 0) + Number(item.quantity || 1) * Number(item.estimated_price || 0);
+      return acc;
+    }, {});
+    const spentByCategory = expensesRes.rows.reduce((acc, row) => {
+      acc[row.category || 'Sem categoria'] = Number(row.spent || 0);
+      return acc;
+    }, {});
+    const budgetByCategory = budgetsRes.rows.reduce((acc, row) => {
+      acc[row.category] = Number(row.monthly_limit || 0);
+      return acc;
+    }, {});
+    const categories = [...new Set([
+      ...Object.keys(plannedByCategory),
+      ...Object.keys(spentByCategory),
+      ...Object.keys(budgetByCategory)
+    ])].filter(Boolean);
+
+    const categoryAnalysis = categories
+      .map(category => {
+        const budget = budgetByCategory[category] || 0;
+        const spent = spentByCategory[category] || 0;
+        const planned = plannedByCategory[category] || 0;
+        const afterShopping = budget - spent - planned;
+        const status = budget <= 0
+          ? 'sem_orcamento'
+          : afterShopping < 0
+            ? 'excede'
+            : afterShopping <= budget * 0.15
+              ? 'apertado'
+              : 'ok';
+
+        return {
+          categoria: category,
+          orcamento: budget,
+          jaGasto: spent,
+          previstoLista: planned,
+          saldoDepoisCompra: afterShopping,
+          status
+        };
+      })
+      .sort((a, b) => {
+        if (a.status === 'excede' && b.status !== 'excede') return -1;
+        if (b.status === 'excede' && a.status !== 'excede') return 1;
+        return b.previstoLista - a.previstoLista;
+      });
+
+    const totalEstimated = lists.reduce((sum, list) => sum + list.totalEstimado, 0);
+    const totalBudget = budgetsRes.rows.reduce((sum, row) => sum + Number(row.monthly_limit || 0), 0);
+    const totalSpent = expensesRes.rows.reduce((sum, row) => sum + Number(row.spent || 0), 0);
+
+    res.json({
+      month: monthKey,
+      lists,
+      summary: {
+        totalEstimated,
+        totalBudget,
+        totalSpent,
+        totalAvailable: totalBudget - totalSpent,
+        afterShoppingBalance: totalBudget - totalSpent - totalEstimated,
+        categoryAnalysis
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao carregar lista de compras:', error);
+    res.status(500).json({ error: 'Erro ao carregar lista de compras.' });
+  }
+};
+
+const createShoppingList = async (req, res) => {
+  let { userId, name, month } = req.body;
+  userId = getRequestUserId(req, userId);
+
+  const cleanName = cleanShoppingText(name || 'Lista de Mercado');
+  const monthKey = getMonthKey(month);
+
+  if (!cleanName) {
+    return res.status(400).json({ error: 'Informe o nome da lista.' });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO shopping_lists (user_id, name, month_key)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, month_key`,
+      [userId, cleanName, monthKey]
+    );
+
+    res.status(201).json(mapShoppingList(result.rows[0], []));
+  } catch (error) {
+    console.error('Erro ao criar lista de compras:', error);
+    res.status(500).json({ error: 'Erro ao criar lista de compras.' });
+  }
+};
+
+const addShoppingListItem = async (req, res) => {
+  const { listId } = req.params;
+  const { name, category, quantity, estimatedPrice } = req.body;
+  const cleanName = cleanShoppingText(name);
+  const cleanCategory = cleanBudgetCategory(category || 'Alimentação / Casa');
+  const cleanQuantity = Number(quantity || 1);
+  const cleanPrice = Number(estimatedPrice || 0);
+
+  if (!cleanName) {
+    return res.status(400).json({ error: 'Informe o nome do item.' });
+  }
+
+  if (!Number.isFinite(cleanQuantity) || cleanQuantity <= 0 || !Number.isFinite(cleanPrice) || cleanPrice < 0) {
+    return res.status(400).json({ error: 'Informe quantidade e preço estimado válidos.' });
+  }
+
+  try {
+    const list = await getOwnedResource(pool, 'shopping_lists', listId, req);
+    if (!list) return res.status(404).json({ error: 'Lista de compras não encontrada.' });
+
+    const result = await pool.query(
+      `INSERT INTO shopping_list_items (list_id, user_id, item_name, category, quantity, estimated_price)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [listId, list.user_id, cleanName, cleanCategory, cleanQuantity, cleanPrice]
+    );
+
+    res.status(201).json(mapShoppingList({ id: list.id, name: list.name, month_key: list.month_key }, [result.rows[0]]).itens[0]);
+  } catch (error) {
+    console.error('Erro ao adicionar item na lista:', error);
+    res.status(500).json({ error: 'Erro ao adicionar item na lista.' });
+  }
+};
+
+const updateShoppingListItem = async (req, res) => {
+  const { id } = req.params;
+  const { name, category, quantity, estimatedPrice, isChecked } = req.body;
+  const cleanName = cleanShoppingText(name);
+  const cleanCategory = cleanBudgetCategory(category || 'Alimentação / Casa');
+  const cleanQuantity = Number(quantity || 1);
+  const cleanPrice = Number(estimatedPrice || 0);
+
+  if (!cleanName) {
+    return res.status(400).json({ error: 'Informe o nome do item.' });
+  }
+
+  if (!Number.isFinite(cleanQuantity) || cleanQuantity <= 0 || !Number.isFinite(cleanPrice) || cleanPrice < 0) {
+    return res.status(400).json({ error: 'Informe quantidade e preço estimado válidos.' });
+  }
+
+  try {
+    const params = [cleanName, cleanCategory, cleanQuantity, cleanPrice, Boolean(isChecked), id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(
+      `UPDATE shopping_list_items
+       SET item_name = $1, category = $2, quantity = $3, estimated_price = $4, is_checked = $5, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6${ownerFilter}
+       RETURNING *`,
+      params
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Item não encontrado.' });
+    }
+
+    res.json(mapShoppingList({ id: result.rows[0].list_id, name: '', month_key: '' }, [result.rows[0]]).itens[0]);
+  } catch (error) {
+    console.error('Erro ao atualizar item da lista:', error);
+    res.status(500).json({ error: 'Erro ao atualizar item da lista.' });
+  }
+};
+
+const deleteShoppingListItem = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM shopping_list_items WHERE id = $1${ownerFilter} RETURNING id`, params);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Item não encontrado.' });
+    }
+
+    res.json({ message: 'Item removido com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao remover item da lista:', error);
+    res.status(500).json({ error: 'Erro ao remover item da lista.' });
+  }
+};
+
+const deleteShoppingList = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const params = [id];
+    const ownerFilter = appendOwnerFilter(req, params);
+    const result = await pool.query(`DELETE FROM shopping_lists WHERE id = $1${ownerFilter} RETURNING id`, params);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Lista de compras não encontrada.' });
+    }
+
+    res.json({ message: 'Lista de compras eliminada com sucesso.' });
+  } catch (error) {
+    console.error('Erro ao eliminar lista de compras:', error);
+    res.status(500).json({ error: 'Erro ao eliminar lista de compras.' });
   }
 };
 
@@ -947,9 +1801,17 @@ module.exports = {
   createProject, updateProject, deleteProject,
   fundProject,
   createForeignCurrency,
+  getFinancialCalendar,
+  getMonthEndForecast,
   getBudgets,
   upsertBudget,
   deleteBudget,
+  getShoppingLists,
+  createShoppingList,
+  addShoppingListItem,
+  updateShoppingListItem,
+  deleteShoppingListItem,
+  deleteShoppingList,
   uploadPaymentProof,
   getPaymentStatus
 };

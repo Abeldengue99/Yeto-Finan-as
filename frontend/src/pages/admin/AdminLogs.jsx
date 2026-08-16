@@ -5,48 +5,83 @@ export default function AdminLogs() {
   const { logs } = useAdmin();
 
   const getLogIcon = (tipo) => {
-    switch(tipo) {
-      case 'success': return '✅';
-      case 'danger': return '❌';
-      case 'warning': return '⚠️';
+    switch (tipo) {
+      case 'success':
+      case 'payment_approved':
+        return '✓';
+      case 'danger':
+      case 'payment_rejected':
+      case 'warning':
+      case 'payment_pending':
+        return '!';
+      case 'user_created':
+        return 'U';
+      case 'assistant_message':
+        return '?';
       case 'info':
-      default: return 'ℹ️';
+      default:
+        return 'i';
     }
   };
 
   const getLogColor = (tipo) => {
-    switch(tipo) {
-      case 'success': return 'var(--success-color)';
-      case 'danger': return 'var(--danger-color)';
-      case 'warning': return '#fca834'; // Yeto Orange
+    switch (tipo) {
+      case 'success':
+      case 'payment_approved':
+        return 'var(--success-color)';
+      case 'danger':
+      case 'payment_rejected':
+        return 'var(--danger-color)';
+      case 'warning':
+      case 'payment_pending':
+        return '#fca834';
+      case 'user_created':
+      case 'assistant_message':
       case 'info':
-      default: return 'var(--primary-color)';
+      default:
+        return 'var(--accent-color)';
     }
   };
 
   return (
     <div style={{ paddingBottom: '2rem' }}>
       <div style={{ marginBottom: '2rem' }}>
-        <h1 className="page-title">📜 Histórico de Atividades</h1>
-        <p className="text-secondary">Registo de auditoria (Logs) de todas as ações críticas da plataforma.</p>
+        <h1 className="page-title">Histórico de Atividades</h1>
+        <p className="text-secondary">Registo de auditoria de ações críticas, utilizadores, pagamentos e Assistente.</p>
       </div>
 
       <div className="dash-card">
         {logs.length === 0 ? (
-          <p className="text-secondary" style={{ textAlign: 'center', padding: '2rem' }}>Não existem registos no histórico.</p>
+          <p className="text-secondary" style={{ textAlign: 'center', padding: '2rem' }}>
+            Ainda não existem atividades para apresentar.
+          </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {logs.map((log) => (
-              <div 
-                key={log.id} 
-                style={{ 
-                  display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', 
+              <div
+                key={log.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  padding: '1rem',
                   borderBottom: '1px solid var(--glass-border)',
                   background: 'rgba(255,255,255,0.3)',
                   borderRadius: '10px'
                 }}
               >
-                <div style={{ fontSize: '1.5rem', background: '#f2f3f9', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{
+                  fontSize: '1rem',
+                  fontWeight: 900,
+                  color: getLogColor(log.tipo),
+                  background: '#f2f3f9',
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
                   {getLogIcon(log.tipo)}
                 </div>
                 <div style={{ flex: 1 }}>

@@ -150,6 +150,7 @@ export default function Planos({ user }) {
             <li style={{ display: 'flex', gap: '10px', color: 'var(--text-primary)' }}><span>✅</span> <strong>Tudo do Essencial +</strong></li>
             <li style={{ display: 'flex', gap: '10px', color: 'var(--text-primary)' }}><span>🤖</span> <strong style={{ color: '#ffb300' }}>Conselheiro IA Inteligente</strong></li>
             <li style={{ display: 'flex', gap: '10px', color: 'var(--text-primary)' }}><span>🌍</span> Gestão de Divisas e Kixikila</li>
+            <li style={{ display: 'flex', gap: '10px', color: 'var(--text-primary)' }}><span>🛒</span> Lista de Compras com Orçamento</li>
             <li style={{ display: 'flex', gap: '10px', color: 'var(--text-primary)' }}><span>📊</span> Relatórios PDF Profissionais</li>
           </ul>
           
@@ -184,7 +185,9 @@ export default function Planos({ user }) {
               <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>✅</span> <strong style={{ color: 'white' }}>Tudo do Essencial +</strong></li>
               <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>🤖</span> <strong style={{ color: '#ffb300' }}>Conselheiro IA Inteligente</strong></li>
               <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>🌍</span> Gestão de Divisas e Kixikila</li>
+              <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>🛒</span> Lista de Compras com Orçamento</li>
               <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>🎮</span> Gamificação do Casal</li>
+              <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>🧭</span> Previsão do Fim do Mês + Modo Emergência</li>
               <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>📊</span> Relatórios PDF Profissionais</li>
             </ul>
             

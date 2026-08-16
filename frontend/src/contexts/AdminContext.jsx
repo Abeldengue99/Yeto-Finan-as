@@ -7,6 +7,23 @@ export function useAdmin() {
   return useContext(AdminContext);
 }
 
+function mapAdminUser(user) {
+  const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin' };
+
+  return {
+    id: user.id,
+    nome: user.name,
+    email: user.email,
+    emailVerificado: Boolean(user.email_verified),
+    ocupacao: user.occupation || '',
+    plano: planMap[user.plan_type] || user.plan_type,
+    pacote: user.subscription_plan || user.plan_type,
+    status: user.status === 'active' ? 'Ativo' : 'Bloqueado',
+    dataRegisto: user.created_at,
+    dataExpiracao: user.plan_expires_at
+  };
+}
+
 export function AdminProvider({ children, isAdmin = false }) {
   const [users, setUsers] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
@@ -43,6 +60,8 @@ export function AdminProvider({ children, isAdmin = false }) {
 
     setIsLoadingAdmin(true);
     try {
+      let loadedUsers = [];
+      let loadedLogs = [];
       const [statsRes, usersRes, logsRes, paymentsRes, assistantRes] = await Promise.all([
         apiFetch('/api/admin/stats'),
         apiFetch('/api/admin/users'),
@@ -70,17 +89,10 @@ export function AdminProvider({ children, isAdmin = false }) {
 
       if (usersRes.ok) {
         const data = await usersRes.json();
+        loadedUsers = data;
         const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin' };
-        setUsers(data.map(user => ({
-          id: user.id,
-          nome: user.name,
-          email: user.email,
-          ocupacao: user.occupation || '',
-          plano: planMap[user.plan_type] || user.plan_type,
-          status: user.status === 'active' ? 'Ativo' : 'Bloqueado',
-          dataRegisto: user.created_at,
-          dataExpiracao: user.plan_expires_at
-        })));
+        void planMap;
+        setUsers(data.map(mapAdminUser));
       }
 
       if (paymentsRes.ok) {
@@ -103,13 +115,26 @@ export function AdminProvider({ children, isAdmin = false }) {
 
       if (logsRes.ok) {
         const data = await logsRes.json();
-        setLogs(data.map(log => ({
+        loadedLogs = data.map(log => ({
           id: log.id,
           data: new Date(log.created_at).toLocaleString('pt-AO'),
           acao: log.description,
           tipo: log.action_type
-        })));
+        }));
       }
+
+      if (loadedLogs.length === 0 && loadedUsers.length > 0) {
+        loadedLogs = loadedUsers
+          .filter(user => user.plan_type !== 'admin')
+          .map(user => ({
+            id: `user-${user.id}`,
+            data: user.created_at ? new Date(user.created_at).toLocaleString('pt-AO') : '',
+            acao: `Conta criada: ${user.name || user.email}`,
+            tipo: 'user_created'
+          }));
+      }
+
+      setLogs(loadedLogs);
 
       if (assistantRes.ok) {
         const data = await assistantRes.json();
@@ -171,7 +196,7 @@ export function AdminProvider({ children, isAdmin = false }) {
       await loadAdminData();
     } catch (err) {
       console.error('Erro ao aprovar pagamento:', err);
-      alert(err.message);
+      addLog(err.message, 'danger');
     }
   };
 
@@ -192,29 +217,72 @@ export function AdminProvider({ children, isAdmin = false }) {
       await loadAdminData();
     } catch (err) {
       console.error('Erro ao rejeitar pagamento:', err);
-      alert(err.message);
+      addLog(err.message, 'danger');
     }
   };
 
-  const toggleUserStatus = (userId) => {
-    setUsers(prev => prev.map(user => {
-      if (user.id === userId) {
-        const novoStatus = user.status === 'Ativo' ? 'Bloqueado' : 'Ativo';
-        addLog(`Estado da conta de ${user.nome} alterado para ${novoStatus}`, novoStatus === 'Ativo' ? 'success' : 'danger');
-        return { ...user, status: novoStatus };
-      }
-      return user;
-    }));
+  const toggleUserStatus = async (userId) => {
+    const user = users.find(item => item.id === userId);
+    if (!user) return null;
+
+    const nextStatus = user.status === 'Ativo' ? 'blocked' : 'active';
+
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao atualizar estado do utilizador.');
+
+      const updated = mapAdminUser(data.user);
+      setUsers(prev => prev.map(item => item.id === userId ? updated : item));
+      await loadAdminData();
+      return updated;
+    } catch (err) {
+      console.error('Erro ao atualizar estado:', err);
+      addLog(err.message, 'danger');
+      return null;
+    }
   };
 
-  const changeUserPlan = (userId, novoPlano) => {
-    setUsers(prev => prev.map(user => {
-      if (user.id === userId) {
-        addLog(`Plano de ${user.nome} alterado manualmente para ${novoPlano}`, 'info');
-        return { ...user, plano: novoPlano, status: 'Ativo' };
-      }
-      return user;
-    }));
+  const changeUserPlan = async (userId, novoPlano) => {
+    if (novoPlano !== 'Premium') return null;
+
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}/premium`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao conceder Premium.');
+
+      const updated = mapAdminUser(data.user);
+      setUsers(prev => prev.map(item => item.id === userId ? updated : item));
+      await loadAdminData();
+      return updated;
+    } catch (err) {
+      console.error('Erro ao conceder Premium:', err);
+      addLog(err.message, 'danger');
+      return null;
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Erro ao eliminar utilizador.');
+
+      setUsers(prev => prev.filter(user => user.id !== userId));
+      await loadAdminData();
+      return true;
+    } catch (err) {
+      console.error('Erro ao eliminar utilizador:', err);
+      addLog(err.message, 'danger');
+      return false;
+    }
   };
 
   const value = {
@@ -234,7 +302,8 @@ export function AdminProvider({ children, isAdmin = false }) {
     approvePayment,
     rejectPayment,
     toggleUserStatus,
-    changeUserPlan
+    changeUserPlan,
+    deleteUser
   };
 
   return (

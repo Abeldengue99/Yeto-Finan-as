@@ -1,13 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const financeController = require('../controllers/financeController');
-const { authenticate, requirePlanAccess, requireSelfBody, requireSelfParam } = require('../middleware/auth');
+const { authenticate, requireAnnualFeatureAccess, requirePlanAccess, requireSelfBody, requireSelfParam } = require('../middleware/auth');
 const { validateUuidParam } = require('../middleware/security');
 
 router.use(authenticate);
 
 router.get('/payment-status/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getPaymentStatus);
 router.get('/:userId/budgets', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getBudgets);
+router.get('/:userId/calendar', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getFinancialCalendar);
+router.get('/:userId/forecast', validateUuidParam('userId'), requireSelfParam('userId'), requireAnnualFeatureAccess, financeController.getMonthEndForecast);
+router.get('/:userId/shopping-lists', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getShoppingLists);
 router.get('/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getUserFinances);
 
 // Contas
@@ -47,6 +50,12 @@ router.post('/currency', requirePlanAccess, requireSelfBody('userId'), financeCo
 
 router.post('/budget', requirePlanAccess, requireSelfBody('userId'), financeController.upsertBudget);
 router.delete('/budget/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteBudget);
+
+router.post('/shopping-list', requirePlanAccess, requireSelfBody('userId'), financeController.createShoppingList);
+router.delete('/shopping-list/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteShoppingList);
+router.post('/shopping-list/:listId/item', validateUuidParam('listId'), requirePlanAccess, financeController.addShoppingListItem);
+router.put('/shopping-list-item/:id', validateUuidParam('id'), requirePlanAccess, financeController.updateShoppingListItem);
+router.delete('/shopping-list-item/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteShoppingListItem);
 
 // Subscricao
 router.post('/payment-proof', requireSelfBody('userId'), financeController.uploadPaymentProof);

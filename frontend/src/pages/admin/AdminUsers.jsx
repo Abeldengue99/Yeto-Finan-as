@@ -19,9 +19,10 @@ function daysUntil(value) {
 }
 
 export default function AdminUsers() {
-  const { users, toggleUserStatus, changeUserPlan } = useAdmin();
+  const { users, toggleUserStatus, changeUserPlan, deleteUser } = useAdmin();
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -36,6 +37,27 @@ export default function AdminUsers() {
   }, [search, users]);
 
   const profileDaysLeft = selectedUser ? daysUntil(selectedUser.dataExpiracao) : null;
+  const actionUser = pendingAction?.user || null;
+  const actionTitle = pendingAction?.type === 'delete' ? 'Eliminar Utilizador' : 'Confirmar Premium';
+  const actionText = pendingAction?.type === 'delete'
+    ? `Eliminar definitivamente ${actionUser?.nome}? Esta ação remove a conta e os dados associados.`
+    : `Dar Premium grátis a ${actionUser?.nome}?`;
+
+  const confirmAction = async () => {
+    if (!pendingAction?.user) return;
+
+    if (pendingAction.type === 'delete') {
+      await deleteUser(pendingAction.user.id);
+      if (selectedUser?.id === pendingAction.user.id) setSelectedUser(null);
+    }
+
+    if (pendingAction.type === 'premium') {
+      const updated = await changeUserPlan(pendingAction.user.id, 'Premium');
+      if (updated && selectedUser?.id === pendingAction.user.id) setSelectedUser(updated);
+    }
+
+    setPendingAction(null);
+  };
 
   return (
     <div>
@@ -55,11 +77,12 @@ export default function AdminUsers() {
 
       <div className="dash-card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '780px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '920px' }}>
             <thead>
               <tr style={{ background: '#f8f9fc', borderBottom: '1px solid var(--glass-border)' }}>
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-secondary)' }}>Utilizador</th>
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-secondary)' }}>Plano</th>
+                <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-secondary)' }}>Email</th>
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-secondary)' }}>Estado</th>
                 <th style={{ padding: '1rem', textAlign: 'left', color: 'var(--text-secondary)' }}>Validade</th>
                 <th style={{ padding: '1rem', textAlign: 'right', color: 'var(--text-secondary)' }}>Ações</th>
@@ -68,7 +91,7 @@ export default function AdminUsers() {
             <tbody>
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                     Nenhum utilizador encontrado.
                   </td>
                 </tr>
@@ -77,6 +100,7 @@ export default function AdminUsers() {
                   const remaining = daysUntil(user.dataExpiracao);
                   const isExpiring = remaining !== null && remaining >= 0 && remaining <= 7;
                   const isExpired = remaining !== null && remaining < 0;
+                  const isAdminUser = user.plano === 'Admin';
 
                   return (
                     <tr key={user.id} style={{ borderBottom: '1px solid var(--glass-border)' }}>
@@ -97,55 +121,51 @@ export default function AdminUsers() {
                         </span>
                       </td>
                       <td style={{ padding: '1rem' }}>
-                        <span style={{
-                          color: user.status === 'Ativo' ? 'var(--success-color)' : 'var(--danger-color)',
-                          fontWeight: 800
-                        }}>
+                        <span style={{ color: user.emailVerificado ? 'var(--success-color)' : '#d97706', fontWeight: 800 }}>
+                          {user.emailVerificado ? 'Verificado' : 'Não verificado'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '1rem' }}>
+                        <span style={{ color: user.status === 'Ativo' ? 'var(--success-color)' : 'var(--danger-color)', fontWeight: 800 }}>
                           {user.status}
                         </span>
                       </td>
                       <td style={{ padding: '1rem', color: isExpired ? 'var(--danger-color)' : isExpiring ? '#d97706' : 'var(--text-secondary)', fontWeight: isExpired || isExpiring ? 800 : 500 }}>
-                        {user.plano === 'Admin' ? 'Admin' : remaining === null ? 'Sem data' : isExpired ? 'Expirado' : `${remaining} dia(s)`}
+                        {isAdminUser ? 'Admin' : remaining === null ? 'Sem data' : isExpired ? 'Expirado' : `${remaining} dia(s)`}
                       </td>
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedUser(user)}
-                            className="btn btn-glass"
-                            style={{ padding: '0.5rem 0.9rem', borderRadius: '10px', fontSize: '0.82rem' }}
-                          >
+                          <button type="button" onClick={() => setSelectedUser(user)} className="btn btn-glass" style={{ padding: '0.5rem 0.9rem', borderRadius: '10px', fontSize: '0.82rem' }}>
                             Perfil 360
                           </button>
-                          {user.plano !== 'Premium' && user.plano !== 'Admin' && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(`Dar Premium grátis a ${user.nome}?`)) {
-                                  changeUserPlan(user.id, 'Premium');
-                                }
-                              }}
-                              className="btn btn-primary"
-                              style={{ padding: '0.5rem 0.9rem', borderRadius: '10px', fontSize: '0.82rem' }}
-                            >
+                          {user.plano !== 'Premium' && !isAdminUser && (
+                            <button type="button" onClick={() => setPendingAction({ type: 'premium', user })} className="btn btn-primary" style={{ padding: '0.5rem 0.9rem', borderRadius: '10px', fontSize: '0.82rem' }}>
                               Dar Premium
                             </button>
                           )}
                           <button
                             type="button"
                             onClick={() => toggleUserStatus(user.id)}
+                            disabled={isAdminUser}
                             className="btn"
                             style={{
                               background: user.status === 'Ativo' ? 'rgba(244, 91, 91, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                              color: user.status === 'Ativo' ? 'var(--danger-color)' : 'var(--success-color)',
+                              color: isAdminUser ? 'var(--text-secondary)' : user.status === 'Ativo' ? 'var(--danger-color)' : 'var(--success-color)',
                               padding: '0.5rem 0.9rem',
                               borderRadius: '10px',
                               fontSize: '0.82rem',
-                              border: 'none'
+                              border: 'none',
+                              opacity: isAdminUser ? 0.45 : 1,
+                              cursor: isAdminUser ? 'not-allowed' : 'pointer'
                             }}
                           >
                             {user.status === 'Ativo' ? 'Bloquear' : 'Ativar'}
                           </button>
+                          {!isAdminUser && (
+                            <button type="button" onClick={() => setPendingAction({ type: 'delete', user })} className="btn" style={{ background: 'rgba(244, 91, 91, 0.14)', color: 'var(--danger-color)', padding: '0.5rem 0.9rem', borderRadius: '10px', fontSize: '0.82rem', border: '1px solid rgba(244, 91, 91, 0.18)' }}>
+                              Eliminar
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -169,54 +189,43 @@ export default function AdminUsers() {
             </div>
 
             <div className="admin-profile360-grid">
-              <div>
-                <span>Plano</span>
-                <strong>{selectedUser.plano}</strong>
-              </div>
-              <div>
-                <span>Validade</span>
-                <strong>{selectedUser.plano === 'Admin' ? 'Admin' : profileDaysLeft === null ? 'Sem data' : `${profileDaysLeft} dia(s)`}</strong>
-              </div>
-              <div>
-                <span>Registo</span>
-                <strong>{formatDate(selectedUser.dataRegisto)}</strong>
-              </div>
-              <div>
-                <span>Profissão</span>
-                <strong>{selectedUser.ocupacao || 'Não informada'}</strong>
-              </div>
+              <div><span>Plano</span><strong>{selectedUser.plano}</strong></div>
+              <div><span>Email</span><strong>{selectedUser.emailVerificado ? 'Verificado' : 'Não verificado'}</strong></div>
+              <div><span>Validade</span><strong>{selectedUser.plano === 'Admin' ? 'Admin' : profileDaysLeft === null ? 'Sem data' : `${profileDaysLeft} dia(s)`}</strong></div>
+              <div><span>Registo</span><strong>{formatDate(selectedUser.dataRegisto)}</strong></div>
+              <div><span>Profissão</span><strong>{selectedUser.ocupacao || 'Não informada'}</strong></div>
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
               {selectedUser.plano !== 'Premium' && selectedUser.plano !== 'Admin' && (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-pill"
-                  onClick={() => {
-                    changeUserPlan(selectedUser.id, 'Premium');
-                    setSelectedUser(prev => prev ? { ...prev, plano: 'Premium', status: 'Ativo' } : prev);
-                  }}
-                >
+                <button type="button" className="btn btn-primary btn-pill" onClick={() => setPendingAction({ type: 'premium', user: selectedUser })}>
                   Dar Premium
                 </button>
               )}
-              <button
-                type="button"
-                className="btn btn-glass btn-pill"
-                onClick={() => {
-                  toggleUserStatus(selectedUser.id);
-                  setSelectedUser(prev => prev ? {
-                    ...prev,
-                    status: prev.status === 'Ativo' ? 'Bloqueado' : 'Ativo'
-                  } : prev);
-                }}
-                style={{ color: selectedUser.status === 'Ativo' ? 'var(--danger-color)' : 'var(--success-color)' }}
-              >
-                {selectedUser.status === 'Ativo' ? 'Bloquear conta' : 'Ativar conta'}
-              </button>
+              {selectedUser.plano !== 'Admin' && (
+                <button type="button" className="btn btn-glass btn-pill" onClick={() => toggleUserStatus(selectedUser.id)} style={{ color: selectedUser.status === 'Ativo' ? 'var(--danger-color)' : 'var(--success-color)' }}>
+                  {selectedUser.status === 'Ativo' ? 'Bloquear conta' : 'Ativar conta'}
+                </button>
+              )}
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal isOpen={Boolean(pendingAction)} onClose={() => setPendingAction(null)} title={actionTitle}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
+            {actionText}
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button type="button" className="btn btn-glass btn-pill" onClick={() => setPendingAction(null)}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary btn-pill" onClick={confirmAction}>
+              Confirmar
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

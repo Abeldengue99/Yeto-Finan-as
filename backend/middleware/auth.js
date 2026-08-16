@@ -91,6 +91,19 @@ function hasActivePlanAccess(user) {
   return Boolean(expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt > new Date());
 }
 
+function isActiveFreeTrial(user) {
+  if (user?.plan_type !== 'free') return false;
+  const expiresAt = getEffectiveExpiry(user);
+  return Boolean(expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt > new Date());
+}
+
+function hasAnnualFeatureAccess(user) {
+  if (user?.plan_type === 'admin') return true;
+  if (isActiveFreeTrial(user)) return true;
+  if (!hasActivePlanAccess(user)) return false;
+  return user?.subscription_plan === 'anual';
+}
+
 async function authenticate(req, res, next) {
   const token = getBearerToken(req);
   const session = parseToken(token);
@@ -101,7 +114,7 @@ async function authenticate(req, res, next) {
 
   try {
     const result = await pool.query(
-      `SELECT id, name, email, plan_type, status, created_at, plan_expires_at
+      `SELECT id, name, email, plan_type, subscription_plan, status, created_at, plan_expires_at
        FROM users
        WHERE id = $1`,
       [session.sub]
@@ -167,10 +180,23 @@ function requirePlanAccess(req, res, next) {
   next();
 }
 
+function requireAnnualFeatureAccess(req, res, next) {
+  if (!hasAnnualFeatureAccess(req.user)) {
+    return res.status(402).json({
+      error: 'Funcionalidade exclusiva do plano Anual. Durante o mês grátis também fica disponível.',
+      annualRequired: true
+    });
+  }
+
+  next();
+}
+
 module.exports = {
   authenticate,
+  hasAnnualFeatureAccess,
   hasActivePlanAccess,
   requireAdmin,
+  requireAnnualFeatureAccess,
   requirePlanAccess,
   requireSelfBody,
   requireSelfParam,

@@ -15,6 +15,7 @@ const buildSessionResponse = (user) => ({
   name: user.name,
   email: user.email,
   plan_type: user.plan_type,
+  subscription_plan: user.subscription_plan || (user.plan_type === 'admin' ? 'admin' : user.plan_type === 'premium' ? 'anual' : 'free'),
   yeto_points: user.yeto_points || 0,
   current_level: user.current_level || 1,
   avatar_url: user.avatar_url,
@@ -135,7 +136,7 @@ const register = async (req, res) => {
     // Cria utilizador (com email NÃO verificado e com 30 dias de trial gratuitos)
     const hash = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      "INSERT INTO users (name, email, password_hash, occupation, email_verified, verification_code, verification_expires, plan_expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '30 days') RETURNING id, name, email",
+      "INSERT INTO users (name, email, password_hash, occupation, email_verified, verification_code, verification_expires, plan_expires_at, subscription_plan) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + INTERVAL '30 days', 'free') RETURNING id, name, email",
       [name, email, hash, occupation || null, false, verificationCode, verificationExpires]
     );
 

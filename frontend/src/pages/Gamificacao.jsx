@@ -40,7 +40,7 @@ export default function Gamificacao() {
 
       {/* Hero Section: Nível e Pontos */}
       <div className="dash-card" style={{ 
-        background: 'linear-gradient(135deg, var(--primary-color) 0%, #1a1850 100%)', 
+        background: 'linear-gradient(135deg, #373392 0%, #1a1850 100%)', 
         color: 'white', 
         marginBottom: '2rem',
         border: '1px solid rgba(255,255,255,0.1)',
@@ -114,7 +114,7 @@ export default function Gamificacao() {
                       
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <div style={{ flex: 1, background: '#eee', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.min(progresso, 100)}%`, height: '100%', background: isCompleto ? 'var(--success-color)' : 'var(--primary-color)', borderRadius: '4px' }}></div>
+                          <div style={{ width: `${Math.min(progresso, 100)}%`, height: '100%', background: isCompleto ? 'var(--success-color)' : 'var(--accent-color)', borderRadius: '4px' }}></div>
                         </div>
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
                           {desafio.progresso} / {desafio.meta}

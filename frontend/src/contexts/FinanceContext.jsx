@@ -23,17 +23,36 @@ function getEffectivePlanExpiry(user) {
 }
 
 function getPlanAccess(user) {
+  const subscriptionPlan = user?.subscription_plan || (user?.plan_type === 'admin' ? 'admin' : user?.plan_type === 'premium' ? 'anual' : 'free');
+
   if (!user) {
-    return { isPremium: false, trialDaysLeft: 0, planExpired: false, planExpiresAt: null };
+    return {
+      isPremium: false,
+      trialDaysLeft: 0,
+      planExpired: false,
+      planExpiresAt: null,
+      subscription_plan: 'free',
+      isTrialActive: false,
+      hasAnnualAccess: false
+    };
   }
 
   if (user.plan_type === 'admin') {
-    return { isPremium: true, trialDaysLeft: null, planExpired: false, planExpiresAt: null };
+    return {
+      isPremium: true,
+      trialDaysLeft: null,
+      planExpired: false,
+      planExpiresAt: null,
+      subscription_plan: 'admin',
+      isTrialActive: false,
+      hasAnnualAccess: true
+    };
   }
 
   const expiresAt = getEffectivePlanExpiry(user);
   const hasValidExpiry = Boolean(expiresAt);
   const isActive = hasValidExpiry && expiresAt > new Date();
+  const isTrialActive = user.plan_type === 'free' && isActive;
   const trialDaysLeft = hasValidExpiry
     ? Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)))
     : 0;
@@ -42,7 +61,10 @@ function getPlanAccess(user) {
     isPremium: isActive,
     trialDaysLeft,
     planExpired: hasValidExpiry && !isActive,
-    planExpiresAt: hasValidExpiry ? expiresAt.toISOString() : null
+    planExpiresAt: hasValidExpiry ? expiresAt.toISOString() : null,
+    subscription_plan: subscriptionPlan,
+    isTrialActive,
+    hasAnnualAccess: isTrialActive || (isActive && subscriptionPlan === 'anual')
   };
 }
 
@@ -55,10 +77,13 @@ export function FinanceProvider({ children, userId }) {
     avatar: 'U',
     foto: null,
     plan_type: 'free',
+    subscription_plan: 'free',
     plan_expires_at: null,
     trialDaysLeft: 0,
     isPremium: false,
-    planExpired: false
+    planExpired: false,
+    isTrialActive: false,
+    hasAnnualAccess: false
   });
 
   // Estado das Notificações
@@ -80,6 +105,9 @@ export function FinanceProvider({ children, userId }) {
   const [projetos, setProjetos] = useState([]);
   const [divisas, setDivisas] = useState([]);
   const [orcamentos, setOrcamentos] = useState([]);
+  const [calendarioFinanceiro, setCalendarioFinanceiro] = useState({ month: '', events: [], summary: null });
+  const [previsaoEmergencia, setPrevisaoEmergencia] = useState({ month: '', forecast: null, emergency: null, access: null });
+  const [listaCompras, setListaCompras] = useState({ month: '', lists: [], summary: null });
   const [pagamentosFixos, setPagamentosFixos] = useState([]);
   const [saldoTotal, setSaldoTotal] = useState(0);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -103,7 +131,7 @@ export function FinanceProvider({ children, userId }) {
       // Hydrate user info from DB
       if (data.user) {
         const planAccess = getPlanAccess(data.user);
-        const { isPremium, trialDaysLeft, planExpired } = planAccess;
+        const { isPremium, trialDaysLeft, planExpired, isTrialActive, hasAnnualAccess } = planAccess;
 
         if (data.user.plan_type !== 'admin' && trialDaysLeft <= 3 && trialDaysLeft > 0) {
           mostrarAlerta(
@@ -152,11 +180,14 @@ export function FinanceProvider({ children, userId }) {
           foto: data.user.avatar_url || null,
           avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
           plan_type: data.user.plan_type,
+          subscription_plan: planAccess.subscription_plan,
           created_at: data.user.created_at,
           plan_expires_at: planAccess.planExpiresAt,
           trialDaysLeft,
           isPremium,
-          planExpired
+          planExpired,
+          isTrialActive,
+          hasAnnualAccess
         }));
         if (data.user.yeto_points !== undefined) {
           setYetoPoints(data.user.yeto_points);
@@ -195,7 +226,10 @@ export function FinanceProvider({ children, userId }) {
           prev.isPremium === planAccess.isPremium &&
           prev.planExpired === planAccess.planExpired &&
           prev.trialDaysLeft === planAccess.trialDaysLeft &&
-          prev.plan_expires_at === planAccess.planExpiresAt
+          prev.plan_expires_at === planAccess.planExpiresAt &&
+          prev.subscription_plan === planAccess.subscription_plan &&
+          prev.isTrialActive === planAccess.isTrialActive &&
+          prev.hasAnnualAccess === planAccess.hasAnnualAccess
         ) {
           return prev;
         }
@@ -203,7 +237,8 @@ export function FinanceProvider({ children, userId }) {
         return {
           ...prev,
           ...planAccess,
-          plan_expires_at: planAccess.planExpiresAt
+          plan_expires_at: planAccess.planExpiresAt,
+          subscription_plan: planAccess.subscription_plan
         };
       });
     }, 60000);
@@ -290,6 +325,7 @@ export function FinanceProvider({ children, userId }) {
         foto: data.user.avatar_url || null,
         avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
         plan_type: data.user.plan_type,
+        subscription_plan: data.user.subscription_plan || prev.subscription_plan,
         plan_expires_at: data.user.plan_expires_at || prev.plan_expires_at
       }));
 
@@ -1038,7 +1074,206 @@ export function FinanceProvider({ children, userId }) {
     }
   };
 
+  const carregarCalendarioFinanceiro = async (mes) => {
+    if (!userId) return { month: mes || '', events: [], summary: null };
+
+    try {
+      const query = mes ? `?month=${encodeURIComponent(mes)}` : '';
+      const res = await apiFetch(`/api/finances/${userId}/calendar${query}`);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao carregar calendário financeiro');
+      }
+
+      const payload = {
+        month: data.month || mes || '',
+        events: data.events || [],
+        summary: data.summary || null
+      };
+
+      setCalendarioFinanceiro(payload);
+      return payload;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível carregar o calendário financeiro.', 'erro');
+      return { month: mes || '', events: [], summary: null };
+    }
+  };
+
+  const carregarPrevisaoEmergencia = async (mes) => {
+    if (!userId) return { month: mes || '', forecast: null, emergency: null, access: null };
+
+    try {
+      const query = mes ? `?month=${encodeURIComponent(mes)}` : '';
+      const res = await apiFetch(`/api/finances/${userId}/forecast${query}`);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao calcular previsão financeira');
+      }
+
+      const payload = {
+        month: data.month || mes || '',
+        forecast: data.forecast || null,
+        emergency: data.emergency || null,
+        access: data.access || null
+      };
+
+      setPrevisaoEmergencia(payload);
+      return payload;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível calcular a previsão financeira.', 'erro');
+      return { month: mes || '', forecast: null, emergency: null, access: null };
+    }
+  };
+
   // Funções de Gamificação
+
+  const carregarListaCompras = async (mes) => {
+    if (!userId) return { month: mes || '', lists: [], summary: null };
+
+    try {
+      const query = mes ? `?month=${encodeURIComponent(mes)}` : '';
+      const res = await apiFetch(`/api/finances/${userId}/shopping-lists${query}`);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao carregar lista de compras');
+      }
+
+      const payload = {
+        month: data.month || mes || '',
+        lists: data.lists || [],
+        summary: data.summary || null
+      };
+
+      setListaCompras(payload);
+      return payload;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível carregar a lista de compras.', 'erro');
+      return { month: mes || '', lists: [], summary: null };
+    }
+  };
+
+  const criarListaCompras = async ({ nome, mes }) => {
+    if (!userId) return null;
+
+    try {
+      const res = await apiFetch('/api/finances/shopping-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, name: nome, month: mes })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao criar lista de compras');
+      }
+
+      await carregarListaCompras(mes);
+      mostrarAlerta('Lista Criada', 'A lista de compras foi criada com sucesso.', 'sucesso');
+      return data;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível criar a lista de compras.', 'erro');
+      return null;
+    }
+  };
+
+  const adicionarItemListaCompras = async (listaId, item, mes) => {
+    try {
+      const res = await apiFetch(`/api/finances/shopping-list/${listaId}/item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: item.nome,
+          category: item.categoria,
+          quantity: Number(item.quantidade || 1),
+          estimatedPrice: Number(item.precoEstimado || 0)
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao adicionar item');
+      }
+
+      await carregarListaCompras(mes);
+      return data;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível adicionar o item.', 'erro');
+      return null;
+    }
+  };
+
+  const atualizarItemListaCompras = async (itemId, item, mes) => {
+    try {
+      const res = await apiFetch(`/api/finances/shopping-list-item/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: item.nome,
+          category: item.categoria,
+          quantity: Number(item.quantidade || 1),
+          estimatedPrice: Number(item.precoEstimado || 0),
+          isChecked: Boolean(item.comprado)
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao atualizar item');
+      }
+
+      await carregarListaCompras(mes);
+      return data;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível atualizar o item.', 'erro');
+      return null;
+    }
+  };
+
+  const eliminarItemListaCompras = async (itemId, mes) => {
+    try {
+      const res = await apiFetch(`/api/finances/shopping-list-item/${itemId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao remover item');
+      }
+
+      await carregarListaCompras(mes);
+      return true;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível remover o item.', 'erro');
+      return false;
+    }
+  };
+
+  const eliminarListaCompras = async (listaId, mes) => {
+    try {
+      const res = await apiFetch(`/api/finances/shopping-list/${listaId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Falha ao eliminar lista');
+      }
+
+      await carregarListaCompras(mes);
+      mostrarAlerta('Lista Eliminada', 'A lista de compras foi removida.', 'sucesso');
+      return true;
+    } catch (err) {
+      console.error(err);
+      mostrarAlerta('Erro', err.message || 'Não foi possível eliminar a lista.', 'erro');
+      return false;
+    }
+  };
 
   const resgatarPremium = async () => {
     if (!userId) return;
@@ -1169,13 +1404,16 @@ export function FinanceProvider({ children, userId }) {
       editarPagamentoFixo, eliminarPagamentoFixo,
       editarProjeto, eliminarProjeto,
       editarKixikila, eliminarKixikila,
-      contas, despesas, dividas, kixikilas, projetos, receitas, movimentos, divisas, orcamentos, pagamentosFixos,
+      contas, despesas, dividas, kixikilas, projetos, receitas, movimentos, divisas, orcamentos, calendarioFinanceiro, previsaoEmergencia, listaCompras, pagamentosFixos,
       categoriasEntradas, categoriasSaidas, adicionarCategoria, removerCategoria,
       registrarDespesa, adicionarReceita, adicionarConta,
       adicionarDivida, liquidarDivida,
       adicionarKixikila, receberMaoKixikila,
       adicionarProjeto, depositarProjeto, adicionarDivisa,
       carregarOrcamentos, guardarOrcamento, eliminarOrcamento,
+      carregarCalendarioFinanceiro, carregarPrevisaoEmergencia,
+      carregarListaCompras, criarListaCompras, adicionarItemListaCompras,
+      atualizarItemListaCompras, eliminarItemListaCompras, eliminarListaCompras,
       adicionarPagamentoFixo, marcarPagamentoFixoComoPago,
       saldoTotal,
       yetoPoints, nivelAtual, desafiosAtivos, conquistas, completarDesafio, resgatarPremium, adicionarDesafio,

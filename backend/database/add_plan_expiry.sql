@@ -1,7 +1,8 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 ALTER TABLE users
-ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMP;
+ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMP,
+ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(50) DEFAULT 'free';
 
 UPDATE users
 SET plan_expires_at = COALESCE(created_at, NOW()) + INTERVAL '30 days'
@@ -43,3 +44,21 @@ WHERE plan_requested IS NULL
 UPDATE payment_approvals
 SET notified_user = FALSE
 WHERE notified_user IS NULL;
+
+UPDATE users u
+SET subscription_plan = CASE
+  WHEN u.plan_type = 'admin' THEN 'admin'
+  WHEN u.plan_type = 'free' THEN 'free'
+  WHEN u.plan_type = 'premium' THEN COALESCE((
+    SELECT p.plan_requested
+    FROM payment_approvals p
+    WHERE p.user_id = u.id
+      AND p.status = 'approved'
+      AND p.plan_requested IN ('semestral', 'anual')
+    ORDER BY p.approved_at DESC NULLS LAST, p.submitted_at DESC NULLS LAST
+    LIMIT 1
+  ), 'anual')
+  ELSE 'free'
+END
+WHERE subscription_plan IS NULL
+   OR subscription_plan NOT IN ('free', 'semestral', 'anual', 'admin');

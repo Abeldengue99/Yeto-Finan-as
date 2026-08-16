@@ -5,7 +5,8 @@ import Modal from '../components/Modal';
 import GlobalAlert from '../components/GlobalAlert';
 import PlanCountdown from '../components/PlanCountdown';
 
-const PREMIUM_TABS = new Set(['orcamento', 'divisas', 'projetos', 'gamificacao', 'kixikila']);
+const PREMIUM_TABS = new Set(['orcamento', 'calendario', 'lista_compras', 'divisas', 'projetos', 'gamificacao', 'kixikila']);
+const ANNUAL_TABS = new Set(['previsao']);
 
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { 
@@ -18,6 +19,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showPlanExpiredModal, setShowPlanExpiredModal] = useState(false);
+  const [showAnnualRequiredModal, setShowAnnualRequiredModal] = useState(false);
 
   const unreadCount = notificacoes.filter(n => !n.lida).length;
   const assistantBadge = assistantUnreadCount > 99 ? '99+' : assistantUnreadCount;
@@ -58,8 +60,15 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
   const searchResults = getSearchResults();
   const hasPremiumAccess = isAdmin || usuario?.isPremium;
+  const hasAnnualAccess = isAdmin || usuario?.hasAnnualAccess;
 
   const navigateToTab = (tab) => {
+    if (ANNUAL_TABS.has(tab) && !hasAnnualAccess) {
+      setShowMobileMenu(false);
+      setShowAnnualRequiredModal(true);
+      return;
+    }
+
     if (PREMIUM_TABS.has(tab) && !hasPremiumAccess) {
       setShowMobileMenu(false);
       setShowPlanExpiredModal(true);
@@ -72,6 +81,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
   const goToPlans = () => {
     setShowPlanExpiredModal(false);
+    setShowAnnualRequiredModal(false);
     setShowProfileModal(false);
     setShowMobileMenu(false);
     setActiveTab('planos');
@@ -86,11 +96,17 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   };
 
   useEffect(() => {
+    if (ANNUAL_TABS.has(activeTab) && !hasAnnualAccess) {
+      setActiveTab('dashboard');
+      setShowAnnualRequiredModal(true);
+      return;
+    }
+
     if (PREMIUM_TABS.has(activeTab) && !hasPremiumAccess) {
       setActiveTab('dashboard');
       setShowPlanExpiredModal(true);
     }
-  }, [activeTab, hasPremiumAccess, setActiveTab]);
+  }, [activeTab, hasAnnualAccess, hasPremiumAccess, setActiveTab]);
 
   if (systemSettings?.maintenanceMode && !isAdmin) {
     return (
@@ -190,7 +206,16 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'orcamento' ? 'active' : ''}`} onClick={() => navigateToTab('orcamento')}>
             <span>📋</span> Orçamento
           </button>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'calendario' ? 'active' : ''}`} onClick={() => navigateToTab('calendario')}>
+            <span>📅</span> Calendário
+          </button>
           
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'previsao' ? 'active' : ''}`} onClick={() => navigateToTab('previsao')}>
+            <span>🧭</span> Previsão
+          </button>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'lista_compras' ? 'active' : ''}`} onClick={() => navigateToTab('lista_compras')}>
+            <span>🛒</span> Lista
+          </button>
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => setActiveTab('dividas')}>
             <span>⚠️</span> Dívidas
           </button>
@@ -548,6 +573,33 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
         </div>
       </Modal>
 
+      <Modal isOpen={showAnnualRequiredModal} onClose={() => setShowAnnualRequiredModal(false)} title="Plano Anual">
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '58px',
+            height: '58px',
+            borderRadius: '16px',
+            background: 'rgba(255, 179, 0, 0.16)',
+            color: '#ff9f00',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1rem auto',
+            fontSize: '1.6rem',
+            fontWeight: 900
+          }}>
+            A
+          </div>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
+            A Previsão do Fim do Mês e o Modo Emergência ficam gratuitos durante o primeiro mês.
+            Depois disso, são exclusivos do plano Anual.
+          </p>
+          <button className="btn btn-primary btn-pill" onClick={goToPlans} style={{ width: '100%' }}>
+            Ver Plano Anual
+          </button>
+        </div>
+      </Modal>
+
 
       {/* Mobile Menu Overlay */}
       {showMobileMenu && (
@@ -588,6 +640,9 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               <button className={`mobile-menu-link ${activeTab === 'bancos' ? 'active' : ''}`} onClick={() => { setActiveTab('bancos'); setShowMobileMenu(false); }}><span>🏦</span> Bancos & Carteiras</button>
               <button className={`mobile-menu-link ${activeTab === 'transacoes' ? 'active' : ''}`} onClick={() => { setActiveTab('transacoes'); setShowMobileMenu(false); }}><span>💸</span> Transações</button>
               <button className={`mobile-menu-link ${activeTab === 'orcamento' ? 'active' : ''}`} onClick={() => navigateToTab('orcamento')}><span>📋</span> Orçamento Familiar</button>
+              <button className={`mobile-menu-link ${activeTab === 'calendario' ? 'active' : ''}`} onClick={() => navigateToTab('calendario')}><span>📅</span> Calendário Financeiro</button>
+              <button className={`mobile-menu-link ${activeTab === 'previsao' ? 'active' : ''}`} onClick={() => navigateToTab('previsao')}><span>🧭</span> Previsão & Emergência</button>
+              <button className={`mobile-menu-link ${activeTab === 'lista_compras' ? 'active' : ''}`} onClick={() => navigateToTab('lista_compras')}><span>🛒</span> Lista de Compras</button>
               <button className={`mobile-menu-link ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => { setActiveTab('dividas'); setShowMobileMenu(false); }}><span>⚠️</span> Dívidas</button>
               <button className={`mobile-menu-link ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => { setActiveTab('pagamentos_fixos'); setShowMobileMenu(false); }}><span>📅</span> Pagamentos Fixos</button>
               {!isAdmin && (

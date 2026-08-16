@@ -11,6 +11,9 @@ router.get('/users', adminController.getAllUsers);
 router.get('/logs', adminController.getLogs);
 router.get('/payments/pending', adminController.getPendingPayments);
 router.post('/promotions', adminController.sendPromotions);
+router.put('/users/:userId/status', validateUuidParam('userId'), adminController.updateUserStatus);
+router.put('/users/:userId/premium', validateUuidParam('userId'), adminController.grantUserPremium);
+router.delete('/users/:userId', validateUuidParam('userId'), adminController.deleteUser);
 router.put('/payments/:paymentId/approve', validateUuidParam('paymentId'), adminController.approvePayment);
 router.put('/payments/:paymentId/reject', validateUuidParam('paymentId'), adminController.rejectPayment);
 

@@ -43,7 +43,7 @@ export default function AdminPayments() {
               <button 
                 onClick={() => setSelectedProof(payment.comprovativoUrl)}
                 className="btn btn-glass" 
-                style={{ width: '100%', padding: '0.8rem', border: '1px solid var(--primary-color)', color: 'var(--primary-color)' }}
+                style={{ width: '100%', padding: '0.8rem', border: '1px solid var(--accent-color)', color: 'var(--accent-color)' }}
               >
                 📄 Ver Comprovativo
               </button>

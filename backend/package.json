@@ -8,7 +8,10 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "check:routes": "node check_feature_routes.js",
+    "migrate:shopping": "node migrate_shopping_lists.js",
+    "migrate:logs": "node migrate_admin_logs.js"
   },
   "keywords": [],
   "author": "",
