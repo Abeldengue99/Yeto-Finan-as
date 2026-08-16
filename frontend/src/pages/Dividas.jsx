@@ -5,7 +5,7 @@ import { useFinance } from '../contexts/FinanceContext';
 import { generateDebtsReport } from '../utils/pdfSpecificGenerators';
 
 export default function Dividas() {
-  const { contas, dividas, adicionarDivida, liquidarDivida, eliminarDivida, editarDivida, usuario } = useFinance();
+  const { contas, dividas, adicionarDivida, liquidarDivida, eliminarDivida, editarDivida, usuario, mostrarAlerta } = useFinance();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
@@ -58,12 +58,21 @@ export default function Dividas() {
     setIsModalOpen(true);
   };
 
+  const handleExportPdf = () => {
+    if (!usuario?.isPremium) {
+      mostrarAlerta('Plano Premium', 'Renove o plano para exportar relatorios PDF profissionais.', 'erro');
+      return;
+    }
+
+    generateDebtsReport(usuario, dividas);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <h2 style={{ color: 'var(--text-primary)' }}>Dívidas e Empréstimos</h2>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn btn-pill" onClick={() => generateDebtsReport(usuario, dividas)} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
+          <button className="btn btn-pill" onClick={handleExportPdf} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
           <button className="btn btn-primary btn-pill" onClick={openNewModal}>+ Nova Dívida</button>
         </div>
       </div>

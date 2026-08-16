@@ -1,17 +1,24 @@
 const pool = require('../config/database');
+const { sendMassPromotion, sendPaymentApproved } = require('../services/emailService');
+
+const FALLBACK_ADMIN_ID = '00000000-0000-0000-0000-000000000000';
 
 const getDashboardStats = async (req, res) => {
   try {
     const usersCountRes = await pool.query("SELECT COUNT(*) FROM users WHERE plan_type != 'admin'");
-    const totalUsers = parseInt(usersCountRes.rows[0].count);
+    const totalUsers = parseInt(usersCountRes.rows[0].count, 10);
 
     const pendingPaymentsRes = await pool.query("SELECT COUNT(*) FROM payment_approvals WHERE status = 'pending'");
-    const pendingApprovals = parseInt(pendingPaymentsRes.rows[0].count);
+    const pendingApprovals = parseInt(pendingPaymentsRes.rows[0].count, 10);
 
-    const activeSubsRes = await pool.query("SELECT COUNT(*) FROM users WHERE plan_type = 'premium'");
-    const activeSubscriptions = parseInt(activeSubsRes.rows[0].count);
+    const activeSubsRes = await pool.query(`
+      SELECT COUNT(*)
+      FROM users
+      WHERE plan_type = 'premium'
+        AND (plan_expires_at IS NULL OR plan_expires_at > NOW())
+    `);
+    const activeSubscriptions = parseInt(activeSubsRes.rows[0].count, 10);
 
-    // Receita deste mês na plataforma real precisaria ver transações dos utilizadores
     const mrrRes = await pool.query("SELECT value FROM system_settings WHERE key = 'premium_price'");
     const premiumPrice = mrrRes.rows.length > 0 ? Number(mrrRes.rows[0].value) : 5999;
     const monthlyRevenue = activeSubscriptions * premiumPrice;
@@ -24,13 +31,17 @@ const getDashboardStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao buscar stats admin:', error);
-    res.status(500).json({ error: 'Erro ao buscar estatísticas.' });
+    res.status(500).json({ error: 'Erro ao buscar estatisticas.' });
   }
 };
 
 const getAllUsers = async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, name, email, plan_type, status, occupation, created_at FROM users ORDER BY created_at DESC");
+    const result = await pool.query(`
+      SELECT id, name, email, plan_type, status, occupation, created_at, plan_expires_at
+      FROM users
+      ORDER BY created_at DESC
+    `);
     res.json(result.rows);
   } catch (error) {
     console.error('Erro ao buscar utilizadores:', error);
@@ -38,15 +49,39 @@ const getAllUsers = async (req, res) => {
   }
 };
 
-const { sendMassPromotion, sendPaymentApproved } = require('../services/emailService');
+const getPendingPayments = async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        p.id,
+        p.user_id,
+        p.plan_requested,
+        p.proof_image,
+        p.status,
+        p.submitted_at,
+        u.name AS user_name,
+        u.email AS user_email
+      FROM payment_approvals p
+      JOIN users u ON p.user_id = u.id
+      WHERE p.status = 'pending'
+      ORDER BY p.submitted_at ASC
+    `);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar pagamentos pendentes:', error);
+    res.status(500).json({ error: 'Erro ao buscar pagamentos pendentes.' });
+  }
+};
 
 const getLogs = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT l.id, l.action_type, l.description, l.created_at, u.name as admin_name 
-      FROM admin_logs l 
-      LEFT JOIN users u ON l.admin_id = u.id 
-      ORDER BY l.created_at DESC LIMIT 50
+      SELECT l.id, l.action_type, l.description, l.created_at, u.name AS admin_name
+      FROM admin_logs l
+      LEFT JOIN users u ON l.admin_id = u.id
+      ORDER BY l.created_at DESC
+      LIMIT 50
     `);
     res.json(result.rows);
   } catch (error) {
@@ -57,24 +92,21 @@ const getLogs = async (req, res) => {
 
 const sendPromotions = async (req, res) => {
   const { subject, htmlContent } = req.body;
-  const adminId = req.user?.id || '00000000-0000-0000-0000-000000000000'; // fallback mock
+  const adminId = req.user?.id || FALLBACK_ADMIN_ID;
 
   try {
     if (!subject || !htmlContent) {
-      return res.status(400).json({ error: 'Assunto e conteúdo são obrigatórios.' });
+      return res.status(400).json({ error: 'Assunto e conteudo sao obrigatorios.' });
     }
 
-    // Buscar todos os utilizadores verificados
     const usersRes = await pool.query("SELECT email, name FROM users WHERE email_verified = TRUE");
-    
+
     if (usersRes.rows.length === 0) {
-      return res.status(400).json({ error: 'Não existem utilizadores com email verificado.' });
+      return res.status(400).json({ error: 'Nao existem utilizadores com email verificado.' });
     }
 
-    // Enviar emails
     const result = await sendMassPromotion(usersRes.rows, subject, htmlContent);
 
-    // Registar log
     await pool.query(
       "INSERT INTO admin_logs (admin_id, action_type, description) VALUES ($1, $2, $3)",
       [adminId, 'send_mass_email', `Enviou email promocional para ${result.sent} utilizadores: ${subject}`]
@@ -82,69 +114,111 @@ const sendPromotions = async (req, res) => {
 
     res.json({ message: `Emails enviados com sucesso para ${result.sent} utilizadores.` });
   } catch (error) {
-    console.error('Erro ao enviar promoções:', error);
+    console.error('Erro ao enviar promocoes:', error);
     res.status(500).json({ error: 'Erro interno ao enviar emails.' });
   }
 };
 
-// Aprovação de pagamento (novo/integrado)
 const approvePayment = async (req, res) => {
   const { paymentId } = req.params;
-  const adminId = req.user?.id || '00000000-0000-0000-0000-000000000000';
+  const adminId = req.user?.id || FALLBACK_ADMIN_ID;
+  const client = await pool.connect();
 
   try {
-    // 1. Get payment details
-    const paymentRes = await pool.query(
-      "SELECT p.*, u.email, u.name as user_name FROM payment_approvals p JOIN users u ON p.user_id = u.id WHERE p.id = $1", 
+    await client.query('BEGIN');
+
+    const paymentRes = await client.query(
+      `SELECT p.*, u.email, u.name AS user_name
+       FROM payment_approvals p
+       JOIN users u ON p.user_id = u.id
+       WHERE p.id = $1`,
       [paymentId]
     );
 
     if (paymentRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Pagamento não encontrado.' });
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Pagamento nao encontrado.' });
     }
 
     const payment = paymentRes.rows[0];
     if (payment.status !== 'pending') {
-      return res.status(400).json({ error: 'Pagamento já processado.' });
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Pagamento ja processado.' });
     }
 
-    // 2. Update payment status
-    await pool.query("UPDATE payment_approvals SET status = 'approved', approved_by = $1, approved_at = NOW() WHERE id = $2", [adminId, paymentId]);
+    const requestedPlan = payment.plan_requested === 'semestral' ? 'semestral' : 'anual';
+    const monthsToAdd = requestedPlan === 'semestral' ? 6 : 12;
 
-    // 3. Update user plan and expiry date
-    // Calculate new expiry date based on plan
-    let interval = '1 year'; // Default (anual)
-    if (payment.plan_type === 'semestral') {
-      interval = '6 months';
-    }
+    await client.query(
+      "UPDATE payment_approvals SET status = 'approved', approved_by = $1, approved_at = NOW(), notified_user = false WHERE id = $2",
+      [adminId, paymentId]
+    );
 
-    await pool.query(`
-      UPDATE users 
-      SET 
+    const updatedUser = await client.query(`
+      UPDATE users
+      SET
         plan_type = 'premium',
-        plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + INTERVAL '${interval}'
+        plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + ($2::int * INTERVAL '1 month'),
+        updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
-    `, [payment.user_id]);
+      RETURNING id, name, email, plan_type, plan_expires_at
+    `, [payment.user_id, monthsToAdd]);
 
-    // 4. Send email
+    await client.query(
+      "INSERT INTO admin_logs (admin_id, action_type, description) VALUES ($1, $2, $3)",
+      [adminId, 'payment_approved', `Aprovou pagamento ${requestedPlan} de ${payment.user_name}`]
+    );
+
+    await client.query('COMMIT');
+
     try {
-      await sendPaymentApproved(payment.email, payment.user_name, payment.plan_type);
-    } catch (e) {
-      console.error('Erro ao enviar email de pagamento aprovado:', e);
-      // Não bloqueia a transação
+      await sendPaymentApproved(payment.email, payment.user_name, requestedPlan === 'anual' ? 'annual' : 'semestral');
+    } catch (emailError) {
+      console.error('Erro ao enviar email de pagamento aprovado:', emailError);
     }
 
-    res.json({ message: 'Pagamento aprovado e plano atualizado!' });
+    res.json({ message: 'Pagamento aprovado e plano atualizado!', user: updatedUser.rows[0] });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Erro ao aprovar pagamento:', error);
     res.status(500).json({ error: 'Erro ao aprovar pagamento.' });
+  } finally {
+    client.release();
+  }
+};
+
+const rejectPayment = async (req, res) => {
+  const { paymentId } = req.params;
+  const adminId = req.user?.id || FALLBACK_ADMIN_ID;
+
+  try {
+    const result = await pool.query(
+      "UPDATE payment_approvals SET status = 'rejected', rejected_by = $1, rejected_at = NOW(), notified_user = false WHERE id = $2 AND status = 'pending' RETURNING id",
+      [adminId, paymentId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Pagamento pendente nao encontrado.' });
+    }
+
+    await pool.query(
+      "INSERT INTO admin_logs (admin_id, action_type, description) VALUES ($1, $2, $3)",
+      [adminId, 'payment_rejected', `Rejeitou o comprovativo ${paymentId}`]
+    );
+
+    res.json({ message: 'Pagamento rejeitado.' });
+  } catch (error) {
+    console.error('Erro ao rejeitar pagamento:', error);
+    res.status(500).json({ error: 'Erro ao rejeitar pagamento.' });
   }
 };
 
 module.exports = {
   getDashboardStats,
   getAllUsers,
+  getPendingPayments,
   getLogs,
   sendPromotions,
-  approvePayment
+  approvePayment,
+  rejectPayment
 };

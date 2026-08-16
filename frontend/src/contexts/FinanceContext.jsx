@@ -2,6 +2,29 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const FinanceContext = createContext();
 
+function getPlanAccess(user) {
+  if (!user) {
+    return { isPremium: false, trialDaysLeft: 0, planExpired: false };
+  }
+
+  if (user.plan_type === 'admin') {
+    return { isPremium: true, trialDaysLeft: null, planExpired: false };
+  }
+
+  const expiresAt = user.plan_expires_at ? new Date(user.plan_expires_at) : null;
+  const hasValidExpiry = expiresAt && !Number.isNaN(expiresAt.getTime());
+  const isActive = Boolean(hasValidExpiry && expiresAt > new Date());
+  const trialDaysLeft = hasValidExpiry
+    ? Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  return {
+    isPremium: isActive,
+    trialDaysLeft,
+    planExpired: hasValidExpiry && !isActive
+  };
+}
+
 export function FinanceProvider({ children, userId }) {
   // Estado do Usuário
   const [usuario, setUsuario] = useState({
@@ -9,7 +32,12 @@ export function FinanceProvider({ children, userId }) {
     email: '',
     profissao: '',
     avatar: 'U',
-    foto: null
+    foto: null,
+    plan_type: 'free',
+    plan_expires_at: null,
+    trialDaysLeft: 0,
+    isPremium: false,
+    planExpired: false
   });
 
   // Estado das Notificações
@@ -46,9 +74,26 @@ export function FinanceProvider({ children, userId }) {
 
       // Hydrate user info from DB
       if (data.user) {
-        let trialDaysLeft = 0;
-        let isPremium = data.user.plan_type === 'premium' || data.user.plan_type === 'admin';
+        const planAccess = getPlanAccess(data.user);
+        const { isPremium, trialDaysLeft, planExpired } = planAccess;
 
+        if (data.user.plan_type !== 'admin' && trialDaysLeft <= 3 && trialDaysLeft > 0) {
+          mostrarAlerta(
+            'Aviso: Plano a Terminar',
+            `O seu acesso termina em ${trialDaysLeft} dias. Renove agora para nao perder as funcionalidades Premium.`,
+            'sucesso'
+          );
+        }
+
+        if (planExpired) {
+          mostrarAlerta(
+            'Plano Expirado',
+            'O seu periodo de acesso terminou. Renove o plano para desbloquear novamente as funcionalidades Premium.',
+            'erro'
+          );
+        }
+
+        /*
         if (data.user.created_at) {
           const createdAt = new Date(data.user.created_at);
           const now = new Date();
@@ -67,6 +112,7 @@ export function FinanceProvider({ children, userId }) {
             );
           }
         }
+        */
 
         setUsuario(prev => ({
           ...prev,
@@ -77,8 +123,10 @@ export function FinanceProvider({ children, userId }) {
           avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
           plan_type: data.user.plan_type,
           created_at: data.user.created_at,
+          plan_expires_at: data.user.plan_expires_at || null,
           trialDaysLeft,
-          isPremium
+          isPremium,
+          planExpired
         }));
         if (data.user.yeto_points !== undefined) {
           setYetoPoints(data.user.yeto_points);
@@ -101,13 +149,35 @@ export function FinanceProvider({ children, userId }) {
       setIsLoadingData(true);
       fetchUserData(userId)
         .then(() => {
-          mostrarAlerta('Dados Sincronizados', 'As suas finanças foram carregadas com sucesso da base de dados PostgreSQL.', 'sucesso');
+          mostrarAlerta('Dados Sincronizados', 'Dados sincronizados com sucesso.', 'sucesso', false);
         })
         .finally(() => {
           setIsLoadingData(false);
         });
     }
   }, [userId]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setUsuario(prev => {
+        const planAccess = getPlanAccess(prev);
+        if (
+          prev.isPremium === planAccess.isPremium &&
+          prev.planExpired === planAccess.planExpired &&
+          prev.trialDaysLeft === planAccess.trialDaysLeft
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          ...planAccess
+        };
+      });
+    }, 60000);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   // Estado de Gamificação (Desafios do Casal)
   const [yetoPoints, setYetoPoints] = useState(1250);
@@ -186,7 +256,9 @@ export function FinanceProvider({ children, userId }) {
         nome: data.user.name,
         profissao: data.user.occupation || '',
         foto: data.user.avatar_url || null,
-        avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar
+        avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
+        plan_type: data.user.plan_type,
+        plan_expires_at: data.user.plan_expires_at || prev.plan_expires_at
       }));
 
       mostrarAlerta('Perfil Atualizado', 'As suas informações foram guardadas na base de dados com sucesso!', 'sucesso');
@@ -208,10 +280,11 @@ export function FinanceProvider({ children, userId }) {
 
   const [alertaGlobal, setAlertaGlobal] = useState(null);
 
-  const mostrarAlerta = (titulo, mensagem, tipo = 'sucesso') => {
+  const mostrarAlerta = (titulo, mensagem, tipo = 'sucesso', registrarNotificacao = true) => {
     setAlertaGlobal({ titulo, mensagem, tipo });
-    // Também adiciona ao histórico de notificações
-    adicionarNotificacao(titulo, mensagem);
+    if (registrarNotificacao) {
+      adicionarNotificacao(titulo, mensagem);
+    }
   };
 
   const marcarNotificacaoLida = (id) => {

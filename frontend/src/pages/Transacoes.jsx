@@ -15,7 +15,7 @@ export default function Transacoes() {
     contas, movimentos, usuario,
     registrarDespesa, adicionarReceita,
     categoriasEntradas, categoriasSaidas, adicionarCategoria, removerCategoria,
-    eliminarTransacao, editarTransacao
+    eliminarTransacao, editarTransacao, mostrarAlerta
   } = useFinance();
 
   const handleSave = (e) => {
@@ -74,6 +74,15 @@ export default function Transacoes() {
     setIsModalOpen(true);
   };
 
+  const handleExportPdf = () => {
+    if (!usuario?.isPremium) {
+      mostrarAlerta('Plano Premium', 'Renove o plano para exportar relatorios PDF profissionais.', 'erro');
+      return;
+    }
+
+    generateTransactionsReport(usuario, movimentos);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -82,7 +91,7 @@ export default function Transacoes() {
           <p className="text-secondary">Registe aqui todos os salários, bónus e despesas da casa.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn btn-pill" onClick={() => generateTransactionsReport(usuario, movimentos)} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
+          <button className="btn btn-pill" onClick={handleExportPdf} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
           <button className="btn btn-glass btn-pill" onClick={() => setIsCategoriaModalOpen(true)}>Gestão de Categorias</button>
           <button className="btn btn-primary btn-pill" onClick={openNewModal}>+ Novo Registo</button>
         </div>

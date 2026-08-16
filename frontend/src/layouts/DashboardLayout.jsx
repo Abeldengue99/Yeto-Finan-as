@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
 import { useAdmin } from '../contexts/AdminContext';
 import Modal from '../components/Modal';
 import GlobalAlert from '../components/GlobalAlert';
+import PlanCountdown from '../components/PlanCountdown';
+
+const PREMIUM_TABS = new Set(['divisas', 'projetos', 'gamificacao', 'kixikila']);
 
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { 
@@ -14,6 +17,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showPlanExpiredModal, setShowPlanExpiredModal] = useState(false);
 
   const unreadCount = notificacoes.filter(n => !n.lida).length;
 
@@ -51,6 +55,31 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   };
 
   const searchResults = getSearchResults();
+  const hasPremiumAccess = isAdmin || usuario?.isPremium;
+
+  const navigateToTab = (tab) => {
+    if (PREMIUM_TABS.has(tab) && !hasPremiumAccess) {
+      setShowMobileMenu(false);
+      setShowPlanExpiredModal(true);
+      return;
+    }
+
+    setActiveTab(tab);
+  };
+
+  const goToPlans = () => {
+    setShowPlanExpiredModal(false);
+    setShowProfileModal(false);
+    setShowMobileMenu(false);
+    setActiveTab('planos');
+  };
+
+  useEffect(() => {
+    if (PREMIUM_TABS.has(activeTab) && !hasPremiumAccess) {
+      setActiveTab('dashboard');
+      setShowPlanExpiredModal(true);
+    }
+  }, [activeTab, hasPremiumAccess, setActiveTab]);
 
   if (systemSettings?.maintenanceMode && !isAdmin) {
     return (
@@ -154,16 +183,16 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => setActiveTab('pagamentos_fixos')}>
             <span>📅</span> Pagamentos Fixos
           </button>
-          <button className={`sidebar-link hide-on-mobile ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => setActiveTab('divisas')}>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}>
             <span>🌍</span> Câmbio & Divisas
           </button>
-          <button className={`sidebar-link hide-on-mobile ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => setActiveTab('projetos')}>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => navigateToTab('projetos')}>
             <span>🎯</span> Projetos
           </button>
-          <button className={`sidebar-link hide-on-mobile ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => setActiveTab('gamificacao')}>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => navigateToTab('gamificacao')}>
             <span>🎮</span> Desafios
           </button>
-          <button className={`sidebar-link hide-on-mobile ${activeTab === 'kixikila' ? 'active' : ''}`} onClick={() => setActiveTab('kixikila')}>
+          <button className={`sidebar-link hide-on-mobile ${activeTab === 'kixikila' ? 'active' : ''}`} onClick={() => navigateToTab('kixikila')}>
             <span>🤝</span> Kixikila
           </button>
 
@@ -198,7 +227,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
         <div className="sidebar-footer hide-on-mobile">
           <button 
             className={`sidebar-link ${activeTab === 'planos' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('planos')}
+            onClick={goToPlans}
             style={{ 
               background: activeTab === 'planos' ? 'var(--accent-gradient)' : 'rgba(255, 179, 0, 0.1)', 
               color: activeTab === 'planos' ? 'white' : '#ffb300', 
@@ -249,7 +278,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                   searchResults.map((res, i) => (
                     <div 
                       key={i} 
-                      onClick={() => { setActiveTab(res.tab); setSearchQuery(''); }}
+                      onClick={() => { navigateToTab(res.tab); setSearchQuery(''); }}
                       style={{ 
                         padding: '10px 15px', display: 'flex', justifyContent: 'space-between', 
                         alignItems: 'center', cursor: 'pointer', borderBottom: i < searchResults.length - 1 ? '1px solid #f0f0f0' : 'none',
@@ -434,6 +463,12 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             </div>
           </label>
         </div>
+
+        <PlanCountdown
+          expiresAt={usuario.plan_expires_at}
+          planType={usuario.plan_type}
+          onRenew={goToPlans}
+        />
         
         <form onSubmit={handleProfileSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <div>
@@ -459,6 +494,32 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal isOpen={showPlanExpiredModal} onClose={() => setShowPlanExpiredModal(false)} title="Plano Expirado">
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '58px',
+            height: '58px',
+            borderRadius: '16px',
+            background: 'rgba(244, 91, 91, 0.12)',
+            color: 'var(--danger-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1rem auto',
+            fontSize: '1.6rem',
+            fontWeight: 900
+          }}>
+            !
+          </div>
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 1.25rem 0' }}>
+            O seu periodo de acesso terminou. Renove o plano para voltar a usar as funcionalidades Premium.
+          </p>
+          <button className="btn btn-primary btn-pill" onClick={goToPlans} style={{ width: '100%' }}>
+            Renovar Agora
+          </button>
+        </div>
       </Modal>
 
 
@@ -501,16 +562,16 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               <button className={`mobile-menu-link ${activeTab === 'transacoes' ? 'active' : ''}`} onClick={() => { setActiveTab('transacoes'); setShowMobileMenu(false); }}><span>💸</span> Transações</button>
               <button className={`mobile-menu-link ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => { setActiveTab('dividas'); setShowMobileMenu(false); }}><span>⚠️</span> Dívidas</button>
               <button className={`mobile-menu-link ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => { setActiveTab('pagamentos_fixos'); setShowMobileMenu(false); }}><span>📅</span> Pagamentos Fixos</button>
-              <button className={`mobile-menu-link ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => { setActiveTab('divisas'); setShowMobileMenu(false); }}><span>🌍</span> Câmbio & Divisas</button>
-              <button className={`mobile-menu-link ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => { setActiveTab('projetos'); setShowMobileMenu(false); }}><span>🎯</span> Projetos (Sonhos)</button>
-              <button className={`mobile-menu-link ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => { setActiveTab('gamificacao'); setShowMobileMenu(false); }}><span>🎮</span> Desafios Familiares</button>
-              <button className={`mobile-menu-link ${activeTab === 'kixikila' ? 'active' : ''}`} onClick={() => { setActiveTab('kixikila'); setShowMobileMenu(false); }}><span>🤝</span> Kixikila</button>
+              <button className={`mobile-menu-link ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}><span>🌍</span> Câmbio & Divisas</button>
+              <button className={`mobile-menu-link ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => navigateToTab('projetos')}><span>🎯</span> Projetos (Sonhos)</button>
+              <button className={`mobile-menu-link ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => navigateToTab('gamificacao')}><span>🎮</span> Desafios Familiares</button>
+              <button className={`mobile-menu-link ${activeTab === 'kixikila' ? 'active' : ''}`} onClick={() => navigateToTab('kixikila')}><span>🤝</span> Kixikila</button>
             </div>
             
             <div style={{ marginTop: '1.5rem' }}>
               <button 
                 className={`mobile-menu-link ${activeTab === 'planos' ? 'active' : ''}`} 
-                onClick={() => { setActiveTab('planos'); setShowMobileMenu(false); }}
+                onClick={goToPlans}
                 style={{ 
                   background: 'linear-gradient(135deg, rgba(255, 179, 0, 0.15) 0%, rgba(255, 143, 0, 0.15) 100%)', 
                   color: '#ffb300', border: '1px solid rgba(255, 179, 0, 0.3)' 

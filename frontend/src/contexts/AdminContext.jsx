@@ -29,10 +29,11 @@ export function AdminProvider({ children }) {
 
   const loadAdminData = async () => {
     try {
-      const [statsRes, usersRes, logsRes] = await Promise.all([
+      const [statsRes, usersRes, logsRes, paymentsRes] = await Promise.all([
         fetch('http://localhost:5000/api/admin/stats'),
         fetch('http://localhost:5000/api/admin/users'),
-        fetch('http://localhost:5000/api/admin/logs')
+        fetch('http://localhost:5000/api/admin/logs'),
+        fetch('http://localhost:5000/api/admin/payments/pending')
       ]);
 
       if (statsRes.ok) {
@@ -54,8 +55,27 @@ export function AdminProvider({ children }) {
           email: u.email,
           plano: planMap[u.plan_type] || u.plan_type,
           status: u.status === 'active' ? 'Ativo' : 'Bloqueado',
-          dataRegisto: u.created_at
+          dataRegisto: u.created_at,
+          dataExpiracao: u.plan_expires_at
         })));
+      }
+
+      if (paymentsRes.ok) {
+        const data = await paymentsRes.json();
+        setPendingPayments(data.map(p => {
+          const plano = p.plan_requested === 'semestral' ? 'semestral' : 'anual';
+          return {
+            id: p.id,
+            userId: p.user_id,
+            nome: p.user_name,
+            email: p.user_email,
+            banco: 'Comprovativo enviado',
+            plano,
+            valor: plano === 'semestral' ? planPrices.semestral : planPrices.anual,
+            comprovativoUrl: p.proof_image,
+            dataSubmissao: p.submitted_at ? new Date(p.submitted_at).toLocaleString() : ''
+          };
+        }));
       }
 
       if (logsRes.ok) {
@@ -88,23 +108,51 @@ export function AdminProvider({ children }) {
     setLogs(prev => [newLog, ...prev]);
   };
 
-  const approvePayment = (paymentId) => {
+  const approvePayment = async (paymentId) => {
     const payment = pendingPayments.find(p => p.id === paymentId);
     if (!payment) return;
 
-    // Atualiza o plano do utilizador para Premium
-    setUsers(users.map(u => u.id === payment.userId ? { ...u, plano: 'Premium', status: 'Ativo' } : u));
-    
-    // Remove dos pendentes
-    setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
-    
-    addLog(`Aprovado pagamento Premium de ${payment.nome}`, 'success');
+    try {
+      const response = await fetch(`http://localhost:5000/api/admin/payments/${paymentId}/approve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao aprovar pagamento.');
+
+      setUsers(users.map(u => (
+        u.id === payment.userId
+          ? { ...u, plano: 'Premium', status: 'Ativo', dataExpiracao: data.user?.plan_expires_at }
+          : u
+      )));
+      setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
+      addLog(`Aprovado pagamento ${payment.plano} de ${payment.nome}`, 'success');
+      await loadAdminData();
+    } catch (err) {
+      console.error('Erro ao aprovar pagamento:', err);
+      alert(err.message);
+    }
   };
 
-  const rejectPayment = (paymentId) => {
+  const rejectPayment = async (paymentId) => {
     const payment = pendingPayments.find(p => p.id === paymentId);
-    if (payment) addLog(`Rejeitado comprovativo de pagamento de ${payment.nome}`, 'danger');
-    setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
+    if (!payment) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/admin/payments/${paymentId}/reject`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao rejeitar pagamento.');
+
+      addLog(`Rejeitado comprovativo de pagamento de ${payment.nome}`, 'danger');
+      setPendingPayments(pendingPayments.filter(p => p.id !== paymentId));
+      await loadAdminData();
+    } catch (err) {
+      console.error('Erro ao rejeitar pagamento:', err);
+      alert(err.message);
+    }
   };
 
   const toggleUserStatus = (userId) => {

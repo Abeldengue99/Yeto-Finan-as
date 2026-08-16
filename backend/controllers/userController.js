@@ -23,7 +23,7 @@ const updateProfile = async (req, res) => {
       queryParams.push(hashedPassword);
     }
 
-    updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING id, name, email, occupation, avatar_url, plan_type`;
+    updateQuery += ` WHERE id = $${queryParams.length + 1} RETURNING id, name, email, occupation, avatar_url, plan_type, plan_expires_at`;
     queryParams.push(userId);
 
     const result = await pool.query(updateQuery, queryParams);

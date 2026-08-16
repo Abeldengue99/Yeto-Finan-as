@@ -26,7 +26,7 @@ export default function AdminPayments() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <h3 style={{ margin: '0 0 0.3rem 0', color: 'var(--text-primary)' }}>{payment.nome}</h3>
-                  <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>ID: #{payment.userId} • Banco: {payment.banco}</p>
+                  <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>ID: #{payment.userId} • Plano: {payment.plano === 'semestral' ? 'Semestral' : 'Anual'}</p>
                 </div>
                 <div style={{ 
                   background: 'var(--accent-gradient)', color: 'white', fontWeight: 'bold', 
@@ -74,7 +74,7 @@ export default function AdminPayments() {
         <div style={{ textAlign: 'center', padding: '1rem 0' }}>
           <img src={selectedProof} alt="Comprovativo de Pagamento" style={{ maxWidth: '100%', borderRadius: '10px', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' }} />
           <p className="text-secondary" style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
-            Verifique se os dados da transferência correspondem ao valor do Plano Premium (5.999 Kz) e se a conta de destino é a do Yeto Finanças.
+            Verifique se os dados da transferência correspondem ao plano escolhido e se a conta de destino é a do Yeto Finanças.
           </p>
         </div>
       </Modal>

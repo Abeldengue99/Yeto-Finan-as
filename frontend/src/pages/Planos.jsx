@@ -7,6 +7,7 @@ export default function Planos({ user }) {
   const [proofImage, setProofImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState('anual');
   const { adicionarNotificacao } = useFinance();
   const adminContext = useAdmin();
 
@@ -21,7 +22,7 @@ export default function Planos({ user }) {
 
     const checkPaymentStatus = async () => {
       try {
-        const res = await fetch(`/api/finances/payment-status/${user.id}`);
+        const res = await fetch(`http://localhost:5000/api/finances/payment-status/${user.id}`);
         if (!res.ok) return;
         const data = await res.json();
         
@@ -57,7 +58,8 @@ export default function Planos({ user }) {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const handleUpgradeClick = () => {
+  const handleUpgradeClick = (plan = 'anual') => {
+    setSelectedPlan(plan);
     if (!user) {
       setShowAuthModal(true);
       return;
@@ -73,10 +75,10 @@ export default function Planos({ user }) {
     setIsSubmitting(true);
     setMessage('');
     try {
-      const res = await fetch('/api/finances/payment-proof', {
+      const res = await fetch('http://localhost:5000/api/finances/payment-proof', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, proofImage })
+        body: JSON.stringify({ userId: user.id, proofImage, planRequested: selectedPlan })
       });
       const data = await res.json();
       if (res.ok) {
@@ -150,7 +152,7 @@ export default function Planos({ user }) {
             <li style={{ display: 'flex', gap: '10px', color: 'var(--text-primary)' }}><span>📊</span> Relatórios PDF Profissionais</li>
           </ul>
           
-          <button className="btn btn-primary btn-pill" style={{ width: '100%', padding: '1rem', fontWeight: 'bold', background: 'transparent', border: '1px solid #ffb300', color: '#ffb300' }} onClick={handleUpgradeClick}>
+          <button className="btn btn-primary btn-pill" style={{ width: '100%', padding: '1rem', fontWeight: 'bold', background: 'transparent', border: '1px solid #ffb300', color: '#ffb300' }} onClick={() => handleUpgradeClick('semestral')}>
             Escolher Semestral
           </button>
         </div>
@@ -185,7 +187,7 @@ export default function Planos({ user }) {
               <li style={{ display: 'flex', gap: '10px', color: '#ddd' }}><span>📊</span> Relatórios PDF Profissionais</li>
             </ul>
             
-            <button className="btn btn-primary btn-pill" style={{ width: '100%', padding: '1rem', fontWeight: 'bold', background: '#ffb300', color: '#000', border: 'none' }} onClick={handleUpgradeClick}>
+            <button className="btn btn-primary btn-pill" style={{ width: '100%', padding: '1rem', fontWeight: 'bold', background: '#ffb300', color: '#000', border: 'none' }} onClick={() => handleUpgradeClick('anual')}>
               Fazer Upgrade Agora
             </button>
             <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.75rem', color: '#777' }}>
@@ -202,7 +204,7 @@ export default function Planos({ user }) {
             <button className="sobre-modal-close" onClick={() => setShowModal(false)}>×</button>
             <h2 style={{ textAlign: 'center', marginBottom: '1rem', color: '#373392' }}>Renovar para Premium</h2>
             <p style={{ textAlign: 'center', marginBottom: '1.5rem', color: '#555' }}>
-              Faça a transferência ou depósito usando um dos métodos abaixo. De seguida, anexe o comprovativo.
+              Plano escolhido: <strong>{selectedPlan === 'semestral' ? 'Semestral' : 'Anual'}</strong>. Faça a transferência ou depósito usando um dos métodos abaixo. De seguida, anexe o comprovativo.
             </p>
             
             <div style={{ background: '#f8f9fc', padding: '1.5rem', borderRadius: '15px', marginBottom: '1rem' }}>

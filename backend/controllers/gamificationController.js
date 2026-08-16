@@ -9,7 +9,7 @@ const redeemPremium = async (req, res) => {
     await client.query('BEGIN');
 
     // Buscar utilizador
-    const userRes = await client.query('SELECT yeto_points, plan_type FROM users WHERE id = $1', [userId]);
+    const userRes = await client.query('SELECT yeto_points, plan_type, plan_expires_at FROM users WHERE id = $1', [userId]);
     if (userRes.rows.length === 0) throw new Error('Utilizador não encontrado.');
     const user = userRes.rows[0];
 
@@ -19,11 +19,12 @@ const redeemPremium = async (req, res) => {
 
     // Deduzir pontos e atualizar plano
     const updatedUserRes = await client.query(
-      `UPDATE users SET 
-        yeto_points = yeto_points - $1, 
-        plan_type = 'premium', 
+      `UPDATE users SET
+        yeto_points = yeto_points - $1,
+        plan_type = 'premium',
+        plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + INTERVAL '1 month',
         updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $2 RETURNING id, yeto_points, plan_type`,
+       WHERE id = $2 RETURNING id, yeto_points, plan_type, plan_expires_at`,
       [PREMIUM_COST, userId]
     );
 

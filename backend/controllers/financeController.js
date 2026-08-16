@@ -5,7 +5,10 @@ const getUserFinances = async (req, res) => {
 
   try {
     // 0. Fetch User Info
-    const userRes = await pool.query('SELECT name, email, occupation, avatar_url, yeto_points, plan_type, created_at FROM users WHERE id = $1', [userId]);
+    const userRes = await pool.query(
+      'SELECT name, email, occupation, avatar_url, yeto_points, plan_type, created_at, plan_expires_at FROM users WHERE id = $1',
+      [userId]
+    );
     const user = userRes.rows[0];
 
     // 1. Fetch Accounts
@@ -421,14 +424,16 @@ const fundProject = async (req, res) => {
 
 
 const uploadPaymentProof = async (req, res) => {
-  const { userId, proofImage } = req.body;
+  const { userId, proofImage, planRequested } = req.body;
   try {
     if (!userId || !proofImage) {
       return res.status(400).json({ error: 'Faltam dados do comprovativo.' });
     }
+
+    const normalizedPlan = planRequested === 'semestral' ? 'semestral' : 'anual';
     const result = await pool.query(
-      'INSERT INTO payment_approvals (user_id, proof_image, status) VALUES ($1, $2, $3) RETURNING *',
-      [userId, proofImage, 'pending']
+      'INSERT INTO payment_approvals (user_id, plan_requested, proof_image, status, notified_user) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [userId, normalizedPlan, proofImage, 'pending', false]
     );
     res.status(201).json({ message: 'Comprovativo enviado com sucesso.', proof: result.rows[0] });
   } catch (err) {

@@ -14,10 +14,15 @@ const createTable = async () => {
       CREATE TABLE IF NOT EXISTS payment_approvals (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        plan_requested VARCHAR(50) DEFAULT 'premium',
+        plan_requested VARCHAR(50) DEFAULT 'anual',
         proof_image TEXT NOT NULL,
         status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-        submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        notified_user BOOLEAN DEFAULT FALSE,
+        approved_by UUID REFERENCES users(id),
+        approved_at TIMESTAMP WITH TIME ZONE,
+        rejected_by UUID REFERENCES users(id),
+        rejected_at TIMESTAMP WITH TIME ZONE
       );
     `);
     console.log('Table payment_approvals created successfully');
