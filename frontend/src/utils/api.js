@@ -52,3 +52,18 @@ export async function apiFetch(path, options = {}) {
 
   return response;
 }
+
+export async function readJsonResponse(response, fallbackMessage = 'Resposta inesperada do servidor.') {
+  const contentType = response.headers.get('Content-Type') || '';
+
+  if (!contentType.includes('application/json')) {
+    await response.text().catch(() => '');
+    throw new Error(
+      response.status === 404
+        ? 'Esta funcionalidade ainda nao esta ativa no servidor. Reinicie o backend e tente novamente.'
+        : fallbackMessage
+    );
+  }
+
+  return response.json();
+}

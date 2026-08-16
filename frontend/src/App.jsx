@@ -18,6 +18,7 @@ import Divisas from './pages/Divisas';
 import PagamentosFixos from './pages/PagamentosFixos';
 import Planos from './pages/Planos';
 import Gamificacao from './pages/Gamificacao';
+import Assistente from './pages/Assistente';
 
 // Importação das Páginas de Admin
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -99,6 +100,7 @@ function App() {
       case 'projetos': return <Projetos />;
       case 'gamificacao': return <Gamificacao />;
       case 'kixikila': return <Kixikila />;
+      case 'assistente': return <Assistente isAdmin={isAdmin} />;
       case 'planos': return <Planos user={user} />;
       // Rotas Admin
       case 'admin_dashboard': return <AdminDashboard />;

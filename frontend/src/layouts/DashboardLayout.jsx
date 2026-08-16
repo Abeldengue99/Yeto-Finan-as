@@ -183,6 +183,11 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => setActiveTab('pagamentos_fixos')}>
             <span>📅</span> Pagamentos Fixos
           </button>
+          {!isAdmin && (
+            <button className={`sidebar-link hide-on-mobile ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => setActiveTab('assistente')}>
+              <span>?</span> Assistente
+            </button>
+          )}
           <button className={`sidebar-link hide-on-mobile ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}>
             <span>🌍</span> Câmbio & Divisas
           </button>
@@ -209,6 +214,9 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               </button>
               <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => setActiveTab('admin_payments')}>
                 <span>💳</span> Pagamentos
+              </button>
+              <button className={`sidebar-link hide-on-mobile ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => setActiveTab('assistente')}>
+                <span>?</span> Assistente
               </button>
               <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => setActiveTab('admin_settings')}>
                 <span>⚙️</span> Definições
@@ -552,6 +560,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                   <button className={`mobile-menu-link ${activeTab === 'admin_dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_dashboard'); setShowMobileMenu(false); }}><span>👑</span> Visão Geral</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_users' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_users'); setShowMobileMenu(false); }}><span>👥</span> Utilizadores</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_payments'); setShowMobileMenu(false); }}><span>💳</span> Pagamentos</button>
+                  <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_settings'); setShowMobileMenu(false); }}><span>⚙️</span> Configurações Globais</button>
                   <button className={`mobile-menu-link ${activeTab === 'admin_logs' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_logs'); setShowMobileMenu(false); }}><span>📜</span> Histórico & Logs</button>
                 </>
@@ -563,6 +572,9 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               <button className={`mobile-menu-link ${activeTab === 'transacoes' ? 'active' : ''}`} onClick={() => { setActiveTab('transacoes'); setShowMobileMenu(false); }}><span>💸</span> Transações</button>
               <button className={`mobile-menu-link ${activeTab === 'dividas' ? 'active' : ''}`} onClick={() => { setActiveTab('dividas'); setShowMobileMenu(false); }}><span>⚠️</span> Dívidas</button>
               <button className={`mobile-menu-link ${activeTab === 'pagamentos_fixos' ? 'active' : ''}`} onClick={() => { setActiveTab('pagamentos_fixos'); setShowMobileMenu(false); }}><span>📅</span> Pagamentos Fixos</button>
+              {!isAdmin && (
+                <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente</button>
+              )}
               <button className={`mobile-menu-link ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}><span>🌍</span> Câmbio & Divisas</button>
               <button className={`mobile-menu-link ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => navigateToTab('projetos')}><span>🎯</span> Projetos (Sonhos)</button>
               <button className={`mobile-menu-link ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => navigateToTab('gamificacao')}><span>🎮</span> Desafios Familiares</button>
