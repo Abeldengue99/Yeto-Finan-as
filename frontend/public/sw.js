@@ -1,8 +1,9 @@
-const CACHE_VERSION = 'yeto-pwa-v3';
+const CACHE_VERSION = 'yeto-pwa-v4';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
   '/favicon.svg',
+  '/login_family.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
   '/maskable-icon-512x512.png'

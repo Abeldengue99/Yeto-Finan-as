@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import familyImg from '../assets/login_family.png';
 import Planos from './Planos';
 import { apiFetch, readJsonResponse } from '../utils/api';
+
+const familyImg = '/login_family.png?v=4';
 
 export default function LoginScreen({ onLogin }) {
   const [showSobre, setShowSobre] = useState(false);
