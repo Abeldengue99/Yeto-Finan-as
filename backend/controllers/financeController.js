@@ -1643,11 +1643,18 @@ const updateAccount = async (req, res) => {
   const { id } = req.params;
   const { name, type, iban, color_code, balance } = req.body;
   try {
-    const balanceValue = balance === undefined || balance === null || balance === '' ? null : Number(balance);
-    const params = [name, type, iban || null, color_code || '#373392', balanceValue, id];
+    const hasBalance = balance !== undefined && balance !== null && balance !== '';
+    const balanceValue = hasBalance ? Number(balance) : null;
+    const params = [name, type, iban || null, color_code || '#373392', id];
+    const balanceSet = hasBalance ? `, balance = $${params.length + 1}` : '';
+
+    if (hasBalance) {
+      params.push(balanceValue);
+    }
+
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4, balance = COALESCE($5, balance), updated_at = CURRENT_TIMESTAMP WHERE id = $6${ownerFilter} RETURNING *`,
+      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4${balanceSet}, updated_at = CURRENT_TIMESTAMP WHERE id = $5${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
