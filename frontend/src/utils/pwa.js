@@ -16,6 +16,24 @@ export function activateWaitingServiceWorker(registration) {
 export function registerServiceWorker({ onNeedRefresh } = {}) {
   if (!('serviceWorker' in navigator)) return undefined;
 
+  if (import.meta.env.DEV) {
+    window.addEventListener('load', async () => {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map(registration => registration.unregister()));
+
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter(key => key.startsWith('yeto-')).map(key => caches.delete(key)));
+        }
+      } catch (error) {
+        console.warn('Nao foi possivel limpar o cache local do aplicativo.', error);
+      }
+    });
+
+    return undefined;
+  }
+
   let refreshing = false;
 
   const handleControllerChange = () => {

@@ -686,7 +686,8 @@ h1, h2, h3, h4, h5, h6 {
   background: #ffffff;
   border-radius: 50%;
   transform: translateX(60%);
-  z-index: 1;
+  z-index: 0;
+  pointer-events: none;
 }
 
 .login-left-content {
@@ -694,13 +695,22 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 2;
   width: 80%;
   max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .login-left-content img {
+  position: relative;
+  z-index: 3;
+  display: block;
   width: 100%;
+  aspect-ratio: 1.35 / 1;
+  min-height: 280px;
   border-radius: 20px;
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
   object-fit: cover;
+  object-position: center;
   border: 5px solid rgba(255, 255, 255, 0.1);
 }
 
