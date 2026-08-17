@@ -4,6 +4,7 @@ import DashboardLayout from './layouts/DashboardLayout';
 import { FinanceProvider } from './contexts/FinanceContext';
 import { AdminProvider } from './contexts/AdminContext';
 import LoginScreen from './pages/LoginScreen';
+import PwaInstallPrompt from './components/PwaInstallPrompt';
 import useInactivityTimer from './hooks/useInactivityTimer';
 import { clearSession, saveSession } from './utils/api';
 
@@ -122,29 +123,35 @@ function App() {
 
   if (showDashboard && user) {
     return (
-      <AdminProvider isAdmin={isAdmin}>
-        <FinanceProvider userId={user.id} initialUser={user}>
-          <DashboardLayout 
-            activeTab={activeTab} 
-            setActiveTab={setActiveTab} 
-            onLogout={handleLogout} 
-            isAdmin={isAdmin}
-          >
-            {renderContent()}
-          </DashboardLayout>
-        </FinanceProvider>
-      </AdminProvider>
+      <>
+        <AdminProvider isAdmin={isAdmin}>
+          <FinanceProvider userId={user.id} initialUser={user}>
+            <DashboardLayout 
+              activeTab={activeTab} 
+              setActiveTab={setActiveTab} 
+              onLogout={handleLogout} 
+              isAdmin={isAdmin}
+            >
+              {renderContent()}
+            </DashboardLayout>
+          </FinanceProvider>
+        </AdminProvider>
+        <PwaInstallPrompt />
+      </>
     );
   }
 
   return (
-    <LoginScreen onLogin={(userData) => {
-      saveSession(userData);
-      setUser(userData);
-      setIsAdmin(userData.plan_type === 'admin');
-      setActiveTab(userData.plan_type === 'admin' ? 'admin_dashboard' : 'dashboard');
-      setShowDashboard(true);
-    }} />
+    <>
+      <LoginScreen onLogin={(userData) => {
+        saveSession(userData);
+        setUser(userData);
+        setIsAdmin(userData.plan_type === 'admin');
+        setActiveTab(userData.plan_type === 'admin' ? 'admin_dashboard' : 'dashboard');
+        setShowDashboard(true);
+      }} />
+      <PwaInstallPrompt />
+    </>
   );
 }
 
