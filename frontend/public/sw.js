@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'yeto-pwa-v1';
+const CACHE_VERSION = 'yeto-pwa-v2';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
