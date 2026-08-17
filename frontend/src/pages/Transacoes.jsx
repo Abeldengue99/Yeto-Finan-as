@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { useFinance } from '../contexts/FinanceContext';
 import { generateTransactionsReport } from '../utils/pdfSpecificGenerators';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
 
 export default function Transacoes() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -10,6 +12,8 @@ export default function Transacoes() {
   const [tipoTransacao, setTipoTransacao] = useState('saida');
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+  const [tipoFiltro, setTipoFiltro] = useState('todos');
   
   const { 
     contas, movimentos, usuario,
@@ -17,6 +21,12 @@ export default function Transacoes() {
     categoriasEntradas, categoriasSaidas, adicionarCategoria, removerCategoria,
     eliminarTransacao, editarTransacao, mostrarAlerta
   } = useFinance();
+
+  const movimentosFiltrados = useMemo(() => {
+    const porPeriodo = filterByPeriod(movimentos, periodFilter, item => item.data);
+    if (tipoFiltro === 'todos') return porPeriodo;
+    return porPeriodo.filter(item => item.tipo_movimento === tipoFiltro);
+  }, [movimentos, periodFilter, tipoFiltro]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -81,7 +91,7 @@ export default function Transacoes() {
       return;
     }
 
-    generateTransactionsReport(usuario, movimentos);
+    generateTransactionsReport(usuario, movimentosFiltrados);
   };
 
   return (
@@ -99,7 +109,23 @@ export default function Transacoes() {
       </div>
 
       <div className="dash-card">
-        <h3 className="section-title">Histórico Geral de Entradas e Saídas</h3>
+        <div className="page-filter-bar">
+          <div>
+            <h3 className="section-title" style={{ marginBottom: '0.4rem' }}>Histórico Geral de Entradas e Saídas</h3>
+            <span className="filter-result-note">
+              {movimentosFiltrados.length} movimento(s) em {getPeriodLabel(periodFilter)}
+            </span>
+          </div>
+          <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+          <div className="filter-field">
+            <label>Tipo</label>
+            <select className="qt-input" value={tipoFiltro} onChange={event => setTipoFiltro(event.target.value)}>
+              <option value="todos">Todos</option>
+              <option value="entrada">Entradas</option>
+              <option value="saida">Saídas</option>
+            </select>
+          </div>
+        </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
@@ -111,7 +137,13 @@ export default function Transacoes() {
             </tr>
           </thead>
           <tbody>
-            {movimentos.map(m => {
+            {movimentosFiltrados.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                  Nenhuma transação encontrada para este filtro.
+                </td>
+              </tr>
+            ) : movimentosFiltrados.map(m => {
               const isEntrada = m.tipo_movimento === 'entrada';
               return (
                 <tr key={m.id} style={{ borderBottom: '1px solid #f2f3f9' }}>

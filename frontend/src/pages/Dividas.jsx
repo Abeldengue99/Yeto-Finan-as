@@ -1,20 +1,35 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { useFinance } from '../contexts/FinanceContext';
 import { generateDebtsReport } from '../utils/pdfSpecificGenerators';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
 
 export default function Dividas() {
   const { contas, dividas, adicionarDivida, liquidarDivida, eliminarDivida, editarDivida, usuario, mostrarAlerta } = useFinance();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+  const [tipoFiltro, setTipoFiltro] = useState('todos');
+  const [estadoFiltro, setEstadoFiltro] = useState('abertas');
   
   // State para o modal de liquidação
   const [liquidationData, setLiquidationData] = useState(null);
 
-  const totalAReceber = dividas.filter(d => !d.paga && d.tipo === 'a_receber').reduce((acc, d) => acc + d.valor, 0);
-  const totalAPagar = dividas.filter(d => !d.paga && d.tipo === 'a_pagar').reduce((acc, d) => acc + d.valor, 0);
+  const dividasFiltradas = useMemo(() => {
+    return filterByPeriod(dividas, periodFilter, item => item.dataVencimento)
+      .filter(item => tipoFiltro === 'todos' || item.tipo === tipoFiltro)
+      .filter(item => {
+        if (estadoFiltro === 'todas') return true;
+        if (estadoFiltro === 'pagas') return item.paga;
+        return !item.paga;
+      });
+  }, [dividas, periodFilter, tipoFiltro, estadoFiltro]);
+
+  const totalAReceber = dividasFiltradas.filter(d => !d.paga && d.tipo === 'a_receber').reduce((acc, d) => acc + d.valor, 0);
+  const totalAPagar = dividasFiltradas.filter(d => !d.paga && d.tipo === 'a_pagar').reduce((acc, d) => acc + d.valor, 0);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -65,7 +80,7 @@ export default function Dividas() {
       return;
     }
 
-    generateDebtsReport(usuario, dividas);
+    generateDebtsReport(usuario, dividasFiltradas);
   };
 
   return (
@@ -90,7 +105,31 @@ export default function Dividas() {
       </div>
 
       <div className="dash-card">
-        <h3 className="section-title">Controlo de Devedores</h3>
+        <div className="page-filter-bar">
+          <div>
+            <h3 className="section-title" style={{ marginBottom: '0.4rem' }}>Controlo de Devedores</h3>
+            <span className="filter-result-note">
+              {dividasFiltradas.length} registo(s) em {getPeriodLabel(periodFilter)}
+            </span>
+          </div>
+          <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+          <div className="filter-field">
+            <label>Tipo</label>
+            <select className="qt-input" value={tipoFiltro} onChange={event => setTipoFiltro(event.target.value)}>
+              <option value="todos">Todos</option>
+              <option value="a_receber">A receber</option>
+              <option value="a_pagar">A pagar</option>
+            </select>
+          </div>
+          <div className="filter-field">
+            <label>Estado</label>
+            <select className="qt-input" value={estadoFiltro} onChange={event => setEstadoFiltro(event.target.value)}>
+              <option value="abertas">Em aberto</option>
+              <option value="pagas">Pagas</option>
+              <option value="todas">Todas</option>
+            </select>
+          </div>
+        </div>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
@@ -103,7 +142,13 @@ export default function Dividas() {
             </tr>
           </thead>
           <tbody>
-            {dividas.map(d => (
+            {dividasFiltradas.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                  Nenhuma dívida encontrada para este filtro.
+                </td>
+              </tr>
+            ) : dividasFiltradas.map(d => (
               <tr key={d.id} style={{ borderBottom: '1px solid #f2f3f9', opacity: d.paga ? 0.5 : 1 }}>
                 <td style={{ padding: '1rem 0', fontWeight: '500', textDecoration: d.paga ? 'line-through' : 'none' }}>{d.pessoa}</td>
                 <td className="text-secondary">{d.finalidade || 'N/A'}</td>

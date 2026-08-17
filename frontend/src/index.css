@@ -604,6 +604,56 @@ h1, h2, h3, h4, h5, h6 {
   outline: none;
 }
 
+.page-filter-bar,
+.dashboard-filter-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.period-filter {
+  min-width: min(100%, 320px);
+}
+
+.period-filter.compact {
+  min-width: min(100%, 260px);
+}
+
+.period-filter label,
+.filter-field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.period-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.period-filter-row .qt-input {
+  min-width: 145px;
+  padding: 0.68rem 0.8rem;
+  border-radius: 13px;
+}
+
+.filter-field {
+  min-width: min(100%, 190px);
+}
+
+.filter-result-note {
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
 /* =======================================================================
    NOVA TELA DE LOGIN (SPLIT SCREEN DOCJUS STYLE)
    ======================================================================= */

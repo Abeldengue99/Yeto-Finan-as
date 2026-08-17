@@ -108,6 +108,7 @@ export function AdminProvider({ children, isAdmin = false }) {
             plano,
             valor: plano === 'semestral' ? planPrices.semestral : planPrices.anual,
             comprovativoUrl: payment.proof_image,
+            dataSubmissaoRaw: payment.submitted_at,
             dataSubmissao: payment.submitted_at ? new Date(payment.submitted_at).toLocaleString('pt-AO') : ''
           };
         }));
@@ -117,6 +118,7 @@ export function AdminProvider({ children, isAdmin = false }) {
         const data = await logsRes.json();
         loadedLogs = data.map(log => ({
           id: log.id,
+          dataRaw: log.created_at,
           data: new Date(log.created_at).toLocaleString('pt-AO'),
           acao: log.description,
           tipo: log.action_type
@@ -128,6 +130,7 @@ export function AdminProvider({ children, isAdmin = false }) {
           .filter(user => user.plan_type !== 'admin')
           .map(user => ({
             id: `user-${user.id}`,
+            dataRaw: user.created_at,
             data: user.created_at ? new Date(user.created_at).toLocaleString('pt-AO') : '',
             acao: `Conta criada: ${user.name || user.email}`,
             tipo: 'user_created'

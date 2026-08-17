@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { useFinance } from '../contexts/FinanceContext';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
 
 export default function Kixikila() {
   const { kixikilas, contas, adicionarKixikila, editarKixikila, receberMaoKixikila, eliminarKixikila } = useFinance();
@@ -10,6 +12,12 @@ export default function Kixikila() {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
   const [selectedKixikilaId, setSelectedKixikilaId] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+
+  const kixikilasFiltradas = useMemo(
+    () => filterByPeriod(kixikilas, periodFilter, item => item.proximaData),
+    [kixikilas, periodFilter]
+  );
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -62,8 +70,20 @@ export default function Kixikila() {
         <button className="btn btn-primary btn-pill" onClick={openNewModal}>+ Novo Grupo</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
-        {kixikilas.map(kixikila => (
+      <div className="page-filter-bar">
+        <span className="filter-result-note">
+          {kixikilasFiltradas.length} grupo(s) em {getPeriodLabel(periodFilter)}
+        </span>
+        <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+      </div>
+
+      {kixikilasFiltradas.length === 0 ? (
+        <div className="dash-card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+          Nenhuma kixikila encontrada para este filtro.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+        {kixikilasFiltradas.map(kixikila => (
           <div key={kixikila.id} className="dash-card" style={{ position: 'relative' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
               <div>
@@ -106,7 +126,8 @@ export default function Kixikila() {
             </button>
           </div>
         ))}
-      </div>
+        </div>
+      )}
 
       <ConfirmDeleteModal 
         isOpen={!!itemToDelete} 

@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import { useFinance } from '../contexts/FinanceContext';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
 
 export default function Divisas() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
   const { usuario, contas, divisas, adicionarDivisa, adicionarNotificacao } = useFinance();
 
   // Mock de câmbio em tempo real (poderia vir de uma API no futuro)
@@ -37,11 +40,16 @@ export default function Divisas() {
     setIsModalOpen(false);
   };
 
+  const divisasFiltradas = useMemo(
+    () => filterByPeriod(divisas, periodFilter, item => item.data),
+    [divisas, periodFilter]
+  );
+
   // Cálculo de Valorização Global
   let valorInvestidoGlobal = 0;
   let valorAtualGlobal = 0;
 
-  divisas.forEach(d => {
+  divisasFiltradas.forEach(d => {
     const investido = d.montante * d.taxaCompra;
     const atual = d.montante * (taxasAtuais[d.moeda] || d.taxaCompra);
     valorInvestidoGlobal += investido;
@@ -59,6 +67,13 @@ export default function Divisas() {
           <p className="text-secondary">Acompanhe a valorização do seu dinheiro em moeda estrangeira.</p>
         </div>
         <button className="btn btn-primary btn-pill" onClick={handleOpenModal}>🌍 Comprar Divisa</button>
+      </div>
+
+      <div className="page-filter-bar">
+        <span className="filter-result-note">
+          {divisasFiltradas.length} compra(s) em {getPeriodLabel(periodFilter)}
+        </span>
+        <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
       </div>
 
       {/* Cartão de Resumo de Valorização */}
@@ -97,8 +112,12 @@ export default function Divisas() {
               <tr>
                 <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>Ainda não tem divisas registadas.</td>
               </tr>
+            ) : divisasFiltradas.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>Nenhuma divisa encontrada para este filtro.</td>
+              </tr>
             ) : (
-              divisas.map(d => {
+              divisasFiltradas.map(d => {
                 const taxaAtual = taxasAtuais[d.moeda] || d.taxaCompra;
                 const investido = d.montante * d.taxaCompra;
                 const atual = d.montante * taxaAtual;

@@ -1,5 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
+import PeriodFilter from '../../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../../utils/periodFilters';
 
 function formatDate(value) {
   if (!value) return 'Sem registo';
@@ -57,6 +59,34 @@ export default function AdminDashboard({ setActiveTab }) {
     loadAdminData
   } = useAdmin();
   const stats = getStats();
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+  const filteredUsers = useMemo(
+    () => filterByPeriod(users, periodFilter, item => item.dataRegisto),
+    [users, periodFilter]
+  );
+  const filteredPayments = useMemo(
+    () => filterByPeriod(pendingPayments, periodFilter, item => item.dataSubmissaoRaw),
+    [pendingPayments, periodFilter]
+  );
+  const filteredLogs = useMemo(
+    () => filterByPeriod(logs, periodFilter, item => item.dataRaw || item.data),
+    [logs, periodFilter]
+  );
+  const filteredStats = useMemo(() => {
+    const nonAdminUsers = filteredUsers.filter(user => user.plano !== 'Admin');
+    const premiumUsers = filteredUsers.filter(user => user.plano === 'Premium').length;
+    const blockedUsersCount = filteredUsers.filter(user => user.status === 'Bloqueado').length;
+    return {
+      totalUsers: nonAdminUsers.length,
+      premiumUsers,
+      blockedUsers: blockedUsersCount,
+      pendingApprovals: filteredPayments.length,
+      assistantUnread: stats.assistantUnread,
+      expiringSoon: stats.expiringSoon,
+      conversionRate: nonAdminUsers.length ? Number(((premiumUsers / nonAdminUsers.length) * 100).toFixed(1)) : 0,
+      mrr: premiumUsers * 5999
+    };
+  }, [filteredUsers, filteredPayments, stats.assistantUnread, stats.expiringSoon]);
 
   const openConversations = useMemo(
     () => assistantConversations.filter(item => item.status === 'open'),
@@ -75,15 +105,15 @@ export default function AdminDashboard({ setActiveTab }) {
     [users]
   );
   const blockedUsers = useMemo(
-    () => users.filter(user => user.status === 'Bloqueado').slice(0, 4),
-    [users]
+    () => filteredUsers.filter(user => user.status === 'Bloqueado').slice(0, 4),
+    [filteredUsers]
   );
-  const recentLogs = logs.slice(0, 5);
+  const recentLogs = filteredLogs.slice(0, 5);
   const commandAlerts = [
     {
-      show: stats.pendingApprovals > 0,
+      show: filteredStats.pendingApprovals > 0,
       title: 'Pagamentos aguardando validação',
-      message: `${stats.pendingApprovals} comprovativo(s) precisam de análise para ativar planos Premium.`,
+      message: `${filteredStats.pendingApprovals} comprovativo(s) precisam de análise para ativar planos Premium.`,
       tone: 'danger',
       actionLabel: 'Ver pagamentos',
       tab: 'admin_payments'
@@ -105,9 +135,9 @@ export default function AdminDashboard({ setActiveTab }) {
       tab: 'admin_users'
     },
     {
-      show: stats.blockedUsers > 0,
+      show: filteredStats.blockedUsers > 0,
       title: 'Contas bloqueadas',
-      message: `${stats.blockedUsers} conta(s) estão bloqueadas e devem ser acompanhadas.`,
+      message: `${filteredStats.blockedUsers} conta(s) estão bloqueadas e devem ser acompanhadas.`,
       tone: 'danger',
       actionLabel: 'Rever contas',
       tab: 'admin_users'

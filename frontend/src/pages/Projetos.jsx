@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { useFinance } from '../contexts/FinanceContext';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
 
 export default function Projetos() {
   const { usuario, projetos, adicionarProjeto, editarProjeto, depositarProjeto, eliminarProjeto, contas, saldoTotal, adicionarNotificacao } = useFinance();
@@ -10,6 +12,12 @@ export default function Projetos() {
   const [selectedProjetoId, setSelectedProjetoId] = useState(null);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+
+  const projetosFiltrados = useMemo(
+    () => filterByPeriod(projetos, periodFilter, item => item.prazo),
+    [projetos, periodFilter]
+  );
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -90,8 +98,20 @@ export default function Projetos() {
         <button className="btn btn-primary btn-pill" onClick={handleOpenCreateModal}>+ Novo Projeto</button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
-        {projetos.map(projeto => {
+      <div className="page-filter-bar">
+        <span className="filter-result-note">
+          {projetosFiltrados.length} projeto(s) em {getPeriodLabel(periodFilter)}
+        </span>
+        <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+      </div>
+
+      {projetosFiltrados.length === 0 ? (
+        <div className="dash-card" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+          Nenhum projeto encontrado para este filtro.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
+        {projetosFiltrados.map(projeto => {
           const inteligencia = getInteligenciaProjeto(projeto);
           const percentagemGuardada = Math.min((projeto.valorGuardado / projeto.objetivo) * 100, 100);
 
@@ -152,7 +172,8 @@ export default function Projetos() {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       <ConfirmDeleteModal 
         isOpen={!!itemToDelete} 

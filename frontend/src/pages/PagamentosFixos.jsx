@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal';
 import { useFinance } from '../contexts/FinanceContext';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, getPeriodLabel, isMonthDayInPeriod } from '../utils/periodFilters';
 
 export default function PagamentosFixos() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
   const { pagamentosFixos, adicionarPagamentoFixo, editarPagamentoFixo, marcarPagamentoFixoComoPago, contas, registrarDespesa, adicionarNotificacao, eliminarPagamentoFixo } = useFinance();
 
   // Função chamada ao enviar o form de novo pagamento
@@ -63,8 +66,13 @@ export default function PagamentosFixos() {
   };
 
   // Calcular métricas
-  const totalFixos = pagamentosFixos.reduce((acc, p) => acc + p.valor, 0);
-  const totalPago = pagamentosFixos.filter(p => p.pagoEsteMes).reduce((acc, p) => acc + p.valor, 0);
+  const pagamentosFiltrados = useMemo(
+    () => pagamentosFixos.filter(p => isMonthDayInPeriod(p.diaVencimento, periodFilter)),
+    [pagamentosFixos, periodFilter]
+  );
+
+  const totalFixos = pagamentosFiltrados.reduce((acc, p) => acc + p.valor, 0);
+  const totalPago = pagamentosFiltrados.filter(p => p.pagoEsteMes).reduce((acc, p) => acc + p.valor, 0);
   const faltaPagar = totalFixos - totalPago;
   const mesAtual = new Date().toLocaleString('pt-PT', { month: 'long' });
   const diaHoje = new Date().getDate();
@@ -96,13 +104,23 @@ export default function PagamentosFixos() {
       </div>
 
       <div className="dash-card">
-        <h3 className="section-title">Calendário do Mês</h3>
+        <div className="page-filter-bar">
+          <div>
+            <h3 className="section-title" style={{ marginBottom: '0.4rem' }}>Calendário do Mês</h3>
+            <span className="filter-result-note">
+              {pagamentosFiltrados.length} pagamento(s) em {getPeriodLabel(periodFilter)}
+            </span>
+          </div>
+          <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+        </div>
         
         {pagamentosFixos.length === 0 ? (
           <p className="text-secondary" style={{ textAlign: 'center', padding: '2rem' }}>Não tem pagamentos fixos configurados.</p>
+        ) : pagamentosFiltrados.length === 0 ? (
+          <p className="text-secondary" style={{ textAlign: 'center', padding: '2rem' }}>Nenhum pagamento fixo encontrado para este filtro.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {pagamentosFixos.map(p => {
+            {pagamentosFiltrados.map(p => {
               // Calcular urgência
               let corEstado = '#10b981'; // Pago
               let textoEstado = 'Pago';

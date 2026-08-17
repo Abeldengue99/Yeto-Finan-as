@@ -1,10 +1,19 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
 import Modal from '../../components/Modal';
+import PeriodFilter from '../../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../../utils/periodFilters';
 
 export default function AdminPayments() {
   const { pendingPayments, approvePayment, rejectPayment } = useAdmin();
   const [selectedProof, setSelectedProof] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+  const [planFilter, setPlanFilter] = useState('todos');
+
+  const filteredPayments = useMemo(() => (
+    filterByPeriod(pendingPayments, periodFilter, item => item.dataSubmissaoRaw)
+      .filter(item => planFilter === 'todos' || item.plano === planFilter)
+  ), [pendingPayments, periodFilter, planFilter]);
 
   return (
     <div>
@@ -13,15 +22,34 @@ export default function AdminPayments() {
         <p className="text-secondary">Validação de comprovativos para ativação do Plano Premium</p>
       </div>
 
+      <div className="dash-card page-filter-bar">
+        <span className="filter-result-note">
+          {filteredPayments.length} pagamento(s) pendente(s) em {getPeriodLabel(periodFilter)}
+        </span>
+        <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+        <div className="filter-field">
+          <label>Plano</label>
+          <select className="qt-input" value={planFilter} onChange={event => setPlanFilter(event.target.value)}>
+            <option value="todos">Todos</option>
+            <option value="semestral">Semestral</option>
+            <option value="anual">Anual</option>
+          </select>
+        </div>
+      </div>
+
       {pendingPayments.length === 0 ? (
         <div className="dash-card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
           <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
           <h2 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Nenhum pagamento pendente!</h2>
           <p className="text-secondary">Todos os comprovativos submetidos já foram avaliados.</p>
         </div>
+      ) : filteredPayments.length === 0 ? (
+        <div className="dash-card" style={{ textAlign: 'center', padding: '3rem 2rem', color: 'var(--text-secondary)' }}>
+          Nenhum pagamento encontrado para este filtro.
+        </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '1.5rem' }}>
-          {pendingPayments.map(payment => (
+          {filteredPayments.map(payment => (
             <div key={payment.id} className="dash-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>

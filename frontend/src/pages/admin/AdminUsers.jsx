@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
 import Modal from '../../components/Modal';
+import PeriodFilter from '../../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../../utils/periodFilters';
 
 function formatDate(value) {
   if (!value) return 'Sem data';
@@ -23,18 +25,29 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+  const [statusFilter, setStatusFilter] = useState('todos');
+  const [emailFilter, setEmailFilter] = useState('todos');
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return users;
-
-    return users.filter(user => (
-      user.nome?.toLowerCase().includes(query) ||
-      user.email?.toLowerCase().includes(query) ||
-      user.plano?.toLowerCase().includes(query) ||
-      user.status?.toLowerCase().includes(query)
-    ));
-  }, [search, users]);
+    return filterByPeriod(users, periodFilter, user => user.dataRegisto)
+      .filter(user => statusFilter === 'todos' || user.status === statusFilter)
+      .filter(user => {
+        if (emailFilter === 'todos') return true;
+        if (emailFilter === 'verificado') return user.emailVerificado;
+        return !user.emailVerificado;
+      })
+      .filter(user => {
+        if (!query) return true;
+        return (
+          user.nome?.toLowerCase().includes(query) ||
+          user.email?.toLowerCase().includes(query) ||
+          user.plano?.toLowerCase().includes(query) ||
+          user.status?.toLowerCase().includes(query)
+        );
+      });
+  }, [search, users, periodFilter, statusFilter, emailFilter]);
 
   const profileDaysLeft = selectedUser ? daysUntil(selectedUser.dataExpiracao) : null;
   const actionUser = pendingAction?.user || null;
@@ -73,6 +86,29 @@ export default function AdminUsers() {
           placeholder="Pesquisar por nome, email, plano ou estado..."
           style={{ maxWidth: '360px', padding: '0.72rem 0.9rem' }}
         />
+      </div>
+
+      <div className="dash-card page-filter-bar">
+        <span className="filter-result-note">
+          {filteredUsers.length} utilizador(es) registado(s) em {getPeriodLabel(periodFilter)}
+        </span>
+        <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+        <div className="filter-field">
+          <label>Estado</label>
+          <select className="qt-input" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+            <option value="todos">Todos</option>
+            <option value="Ativo">Ativos</option>
+            <option value="Bloqueado">Bloqueados</option>
+          </select>
+        </div>
+        <div className="filter-field">
+          <label>Email</label>
+          <select className="qt-input" value={emailFilter} onChange={event => setEmailFilter(event.target.value)}>
+            <option value="todos">Todos</option>
+            <option value="verificado">Verificados</option>
+            <option value="nao_verificado">Não verificados</option>
+          </select>
+        </div>
       </div>
 
       <div className="dash-card" style={{ padding: 0, overflow: 'hidden' }}>

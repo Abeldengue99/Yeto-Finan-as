@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
 import { useAdmin } from '../contexts/AdminContext';
 import { 
@@ -6,6 +6,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
 import { generateProfessionalReport } from '../utils/pdfGenerator';
+import PeriodFilter from '../components/PeriodFilter';
+import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
 
 export default function DashboardHome({ isAdmin, setActiveTab }) {
   const { 
@@ -25,9 +27,34 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
   const adminData = useAdmin(); // Access admin context data if needed
   const [currentInsightIndex, setCurrentInsightIndex] = useState(0);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+
+  const movimentosPeriodo = useMemo(
+    () => filterByPeriod(movimentos, periodFilter, item => item.data),
+    [movimentos, periodFilter]
+  );
+  const despesasPeriodo = useMemo(
+    () => filterByPeriod(despesas, periodFilter, item => item.data),
+    [despesas, periodFilter]
+  );
+  const receitasPeriodo = useMemo(
+    () => filterByPeriod(receitas, periodFilter, item => item.data),
+    [receitas, periodFilter]
+  );
+  const dividasPeriodo = useMemo(
+    () => filterByPeriod(dividas, periodFilter, item => item.dataVencimento),
+    [dividas, periodFilter]
+  );
+  const projetosPeriodo = useMemo(
+    () => filterByPeriod(projetos, periodFilter, item => item.prazo),
+    [projetos, periodFilter]
+  );
+  const periodLabel = getPeriodLabel(periodFilter);
+  const totalEntradasPeriodo = receitasPeriodo.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+  const totalSaidasPeriodo = despesasPeriodo.reduce((sum, item) => sum + Number(item.valor || 0), 0);
   
   // 1. Pegar os 4 movimentos mais recentes
-  const movimentosRecentes = movimentos.slice(0, 4);
+  const movimentosRecentes = movimentosPeriodo.slice(0, 4);
   
   // Helper para ícone
   const getIcon = (categoria) => {
@@ -42,7 +69,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
   };
 
   // 2. Preparar dados para o Gráfico de Despesas (Pie Chart)
-  const despesasPorCategoria = despesas.reduce((acc, current) => {
+  const despesasPorCategoria = despesasPeriodo.reduce((acc, current) => {
     const cat = current.categoria || 'Outros';
     if (!acc[cat]) acc[cat] = 0;
     acc[cat] += current.valor;
@@ -57,8 +84,8 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
   const COLORS = ['#373392', '#f45b5b', '#10b981', '#fca834', '#8a8ca3'];
 
   // 3. Preparar dados para o Gráfico de Dívidas (Bar Chart)
-  const totalAReceber = dividas.filter(d => !d.paga && d.tipo === 'a_receber').reduce((acc, d) => acc + d.valor, 0);
-  const totalAPagar = dividas.filter(d => !d.paga && d.tipo === 'a_pagar').reduce((acc, d) => acc + d.valor, 0);
+  const totalAReceber = dividasPeriodo.filter(d => !d.paga && d.tipo === 'a_receber').reduce((acc, d) => acc + d.valor, 0);
+  const totalAPagar = dividasPeriodo.filter(d => !d.paga && d.tipo === 'a_pagar').reduce((acc, d) => acc + d.valor, 0);
   
   // 4. Receitas e Despesas do Mês Atual (Usadas na IA e no PDF)
   const mesAnoStr = new Date().toISOString().slice(0, 7); // YYYY-MM
@@ -82,8 +109,8 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
         receitasMes,
         despesasMes,
         movimentos: movimentosRecentes,
-        dividas,
-        projetos
+        dividas: dividasPeriodo,
+        projetos: projetosPeriodo
       });
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
@@ -231,7 +258,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
   ];
 
   // 4. Mapear Projetos do Estado Global
-  const dataProjetos = projetos.map(p => ({
+  const dataProjetos = projetosPeriodo.map(p => ({
     name: p.nome,
     guardado: p.valorGuardado,
     objetivo: p.objetivo - p.valorGuardado > 0 ? p.objetivo - p.valorGuardado : 0
@@ -371,7 +398,13 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
       )}
 
       {/* Action Bar */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1.5rem' }}>
+      <div className="dashboard-filter-bar">
+        <div>
+          <PeriodFilter value={periodFilter} onChange={setPeriodFilter} compact />
+          <span className="filter-result-note">
+            {movimentosPeriodo.length} movimento(s) em {periodLabel} · Entradas Kz {totalEntradasPeriodo.toLocaleString()} · Saídas Kz {totalSaidasPeriodo.toLocaleString()}
+          </span>
+        </div>
         <button 
           onClick={handleGeneratePDF}
           className="btn btn-pill" 
