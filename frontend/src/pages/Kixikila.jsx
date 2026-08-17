@@ -11,7 +11,7 @@ export default function Kixikila() {
   const [itemToEdit, setItemToEdit] = useState(null);
   const [selectedKixikilaId, setSelectedKixikilaId] = useState(null);
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
     const novaKixikila = {
       nome: e.target[0].value,
@@ -20,9 +20,10 @@ export default function Kixikila() {
     };
 
     if (itemToEdit) {
-      editarKixikila(itemToEdit.id, novaKixikila);
+      const saved = await editarKixikila(itemToEdit.id, novaKixikila);
+      if (!saved) return;
     } else {
-      adicionarKixikila(novaKixikila);
+      await adicionarKixikila(novaKixikila);
     }
     
     setIsModalOpen(false);

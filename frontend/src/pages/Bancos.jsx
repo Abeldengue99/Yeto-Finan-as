@@ -23,7 +23,7 @@ export default function Bancos() {
     return { cor: '#373392', logo: '🏦' }; // Default
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const nome = e.target[0].value;
     const style = getBankStyle(nome);
@@ -38,9 +38,10 @@ export default function Bancos() {
     };
 
     if (itemToEdit) {
-      editarConta(itemToEdit.id, novaConta);
+      const saved = await editarConta(itemToEdit.id, novaConta);
+      if (!saved) return;
     } else {
-      adicionarConta(novaConta);
+      await adicionarConta(novaConta);
     }
     
     setIsModalOpen(false);

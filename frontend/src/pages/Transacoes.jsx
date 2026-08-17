@@ -18,7 +18,7 @@ export default function Transacoes() {
     eliminarTransacao, editarTransacao, mostrarAlerta
   } = useFinance();
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const novaTransacao = {
       descricao: e.target[0].value,
@@ -32,13 +32,14 @@ export default function Transacoes() {
       // Editar transação existente
       // O backend precisa de saber o tipo de transação (income vs expense)
       novaTransacao.type = tipoTransacao === 'entrada' ? 'income' : 'expense';
-      editarTransacao(itemToEdit.id, novaTransacao);
+      const saved = await editarTransacao(itemToEdit.id, novaTransacao);
+      if (!saved) return;
     } else {
       // Nova transação
       if (tipoTransacao === 'saida') {
-        registrarDespesa(novaTransacao);
+        await registrarDespesa(novaTransacao);
       } else {
-        adicionarReceita(novaTransacao);
+        await adicionarReceita(novaTransacao);
       }
     }
     setIsModalOpen(false);

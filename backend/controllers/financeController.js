@@ -307,7 +307,7 @@ const getUserFinances = async (req, res) => {
     const saldoTotal = accounts.reduce((acc, curr) => acc + Number(curr.balance), 0);
 
     // Calculate despesas/entradas from transactions (for simplicity, we return the raw transactions and let frontend handle, or we can aggregate)
-    const despesas = transactions.filter(t => t.type === 'expense').map(t => ({ id: t.id, descricao: t.description, valor: Number(t.amount), categoria: t.category, data: t.transaction_date }));
+    const despesas = transactions.filter(t => t.type === 'expense').map(t => ({ id: t.id, descricao: t.description, valor: Number(t.amount), categoria: t.category, data: t.transaction_date, contaId: t.account_id }));
     
     // Map data to match frontend expectations
     res.status(200).json({
@@ -327,7 +327,8 @@ const getUserFinances = async (req, res) => {
         descricao: t.description,
         valor: Number(t.amount),
         categoria: t.category,
-        data: t.transaction_date
+        data: t.transaction_date,
+        contaId: t.account_id
       })),
       despesas,
       dividas: debts.map(d => ({
@@ -342,6 +343,7 @@ const getUserFinances = async (req, res) => {
       pagamentosFixos: fixedPayments.map(p => ({
         id: p.id,
         nome: p.name,
+        categoria: p.category,
         valor: Number(p.amount),
         diaVencimento: p.due_day,
         pagoEsteMes: p.is_paid_this_month
@@ -1557,7 +1559,7 @@ const getPaymentStatus = async (req, res) => {
 // --- TRANSACTIONS ---
 const updateTransaction = async (req, res) => {
   const { id } = req.params;
-  const { description, amount, category, transaction_date } = req.body;
+  const { description, amount, category, transaction_date, accountId, type } = req.body;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1569,17 +1571,31 @@ const updateTransaction = async (req, res) => {
     }
     const oldAmount = Number(old.amount);
     const newAmount = Number(amount);
+    const newType = ['income', 'expense'].includes(type) ? type : old.type;
+    const newAccountId = accountId || old.account_id;
 
-    // Reverse old balance impact, apply new
-    if (old.type === 'expense') {
-      await client.query('UPDATE accounts SET balance = balance + $1 - $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND user_id = $4', [oldAmount, newAmount, old.account_id, old.user_id]);
-    } else {
-      await client.query('UPDATE accounts SET balance = balance - $1 + $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 AND user_id = $4', [oldAmount, newAmount, old.account_id, old.user_id]);
+    const ownsNewAccount = await ensureAccountOwnership(client, newAccountId, old.user_id);
+    if (!ownsNewAccount) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta nÃ£o pertence ao utilizador autenticado.' });
     }
 
+    const oldReverse = old.type === 'income' ? -oldAmount : oldAmount;
+    const newImpact = newType === 'income' ? newAmount : -newAmount;
+
+    await client.query(
+      'UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+      [oldReverse, old.account_id, old.user_id]
+    );
+
+    await client.query(
+      'UPDATE accounts SET balance = balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+      [newImpact, newAccountId, old.user_id]
+    );
+
     const result = await client.query(
-      'UPDATE transactions SET description = $1, amount = $2, category = $3, transaction_date = $4 WHERE id = $5 AND user_id = $6 RETURNING *',
-      [description, newAmount, category, transaction_date, id, old.user_id]
+      'UPDATE transactions SET account_id = $1, type = $2, description = $3, amount = $4, category = $5, transaction_date = $6 WHERE id = $7 AND user_id = $8 RETURNING *',
+      [newAccountId, newType, description, newAmount, category, transaction_date, id, old.user_id]
     );
     await client.query('COMMIT');
     res.json(result.rows[0]);
@@ -1625,12 +1641,13 @@ const deleteTransaction = async (req, res) => {
 // --- ACCOUNTS ---
 const updateAccount = async (req, res) => {
   const { id } = req.params;
-  const { name, type, iban, color_code } = req.body;
+  const { name, type, iban, color_code, balance } = req.body;
   try {
-    const params = [name, type, iban || null, color_code || '#373392', id];
+    const balanceValue = balance === undefined || balance === null || balance === '' ? null : Number(balance);
+    const params = [name, type, iban || null, color_code || '#373392', balanceValue, id];
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5${ownerFilter} RETURNING *`,
+      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4, balance = COALESCE($5, balance), updated_at = CURRENT_TIMESTAMP WHERE id = $6${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
@@ -1724,12 +1741,12 @@ const deleteFixedPayment = async (req, res) => {
 // --- PROJECTS ---
 const updateProject = async (req, res) => {
   const { id } = req.params;
-  const { name, category, target_amount, deadline } = req.body;
+  const { name, category, target_amount, saved_amount, deadline } = req.body;
   try {
-    const params = [name, category, Number(target_amount), deadline || null, id];
+    const params = [name, category, Number(target_amount), Number(saved_amount || 0), deadline || null, id];
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE projects SET name = $1, category = $2, target_amount = $3, deadline = $4 WHERE id = $5${ownerFilter} RETURNING *`,
+      `UPDATE projects SET name = $1, category = $2, target_amount = $3, saved_amount = $4, deadline = $5 WHERE id = $6${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Projeto não encontrado.' });

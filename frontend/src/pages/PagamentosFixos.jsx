@@ -10,7 +10,7 @@ export default function PagamentosFixos() {
   const { pagamentosFixos, adicionarPagamentoFixo, editarPagamentoFixo, marcarPagamentoFixoComoPago, contas, registrarDespesa, adicionarNotificacao, eliminarPagamentoFixo } = useFinance();
 
   // Função chamada ao enviar o form de novo pagamento
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const novo = {
       nome: e.target[0].value,
@@ -20,9 +20,10 @@ export default function PagamentosFixos() {
     };
     
     if (itemToEdit) {
-      editarPagamentoFixo(itemToEdit.id, novo);
+      const saved = await editarPagamentoFixo(itemToEdit.id, novo);
+      if (!saved) return;
     } else {
-      adicionarPagamentoFixo(novo);
+      await adicionarPagamentoFixo(novo);
     }
     
     setIsModalOpen(false);

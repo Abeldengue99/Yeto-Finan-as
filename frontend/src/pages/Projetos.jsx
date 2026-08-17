@@ -11,7 +11,7 @@ export default function Projetos() {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
 
-  const handleCreate = (e) => {
+  const handleCreate = async (e) => {
     e.preventDefault();
     const novoProjeto = {
       nome: e.target[0].value,
@@ -22,9 +22,10 @@ export default function Projetos() {
     };
     
     if (itemToEdit) {
-      editarProjeto(itemToEdit.id, novoProjeto);
+      const saved = await editarProjeto(itemToEdit.id, novoProjeto);
+      if (!saved) return;
     } else {
-      adicionarProjeto(novoProjeto);
+      await adicionarProjeto(novoProjeto);
     }
     
     setIsModalOpen(false);

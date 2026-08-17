@@ -16,7 +16,7 @@ export default function Dividas() {
   const totalAReceber = dividas.filter(d => !d.paga && d.tipo === 'a_receber').reduce((acc, d) => acc + d.valor, 0);
   const totalAPagar = dividas.filter(d => !d.paga && d.tipo === 'a_pagar').reduce((acc, d) => acc + d.valor, 0);
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const novaDivida = {
       pessoa: e.target[0].value,
@@ -28,9 +28,10 @@ export default function Dividas() {
     };
     
     if (itemToEdit) {
-      editarDivida(itemToEdit.id, novaDivida);
+      const saved = await editarDivida(itemToEdit.id, novaDivida);
+      if (!saved) return;
     } else {
-      adicionarDivida(novaDivida);
+      await adicionarDivida(novaDivida);
     }
     
     setIsModalOpen(false);

@@ -123,7 +123,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
     );
   }
 
-  const handleProfileSave = (e) => {
+  const handleProfileSave = async (e) => {
     e.preventDefault();
     const dados = {
       nome: e.target[0].value,
@@ -131,7 +131,8 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
       profissao: e.target[2].value,
       novaSenha: e.target[3].value
     };
-    atualizarUsuario(dados);
+    const saved = await atualizarUsuario(dados);
+    if (!saved) return;
     setShowProfileModal(false);
   };
 

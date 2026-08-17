@@ -355,9 +355,11 @@ export function FinanceProvider({ children, userId, initialUser }) {
       if (dados.novaSenha) {
         mostrarAlerta('Segurança', 'A sua senha foi alterada.', 'sucesso');
       }
+      return true;
     } catch (err) {
       console.error(err);
       mostrarAlerta('Erro', 'Não foi possível atualizar o perfil.', 'erro');
+      return false;
     }
   };
 
@@ -1329,12 +1331,17 @@ export function FinanceProvider({ children, userId, initialUser }) {
   const handleBackendOp = async (opName, fetchCall, successMsg) => {
     try {
       const res = await fetchCall();
-      if (!res.ok) throw new Error(`Erro na operação: ${res.statusText}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Erro na operação: ${res.statusText}`);
+      }
       await fetchUserData(userId); // Recarrega tudo
       if (successMsg) mostrarAlerta('Sucesso', successMsg, 'sucesso');
+      return true;
     } catch (err) {
       console.error(err);
-      mostrarAlerta('Erro', `Não foi possível ${opName}.`, 'erro');
+      mostrarAlerta('Erro', err.message || `Não foi possível ${opName}.`, 'erro');
+      return false;
     }
   };
 
@@ -1344,7 +1351,9 @@ export function FinanceProvider({ children, userId, initialUser }) {
       description: dados.descricao,
       amount: Number(dados.valor),
       category: dados.categoria,
-      transaction_date: dados.data
+      transaction_date: dados.data,
+      accountId: dados.contaId,
+      type: dados.type || (dados.tipo_movimento === 'entrada' ? 'income' : 'expense')
     })
   }), 'Transação atualizada!');
 
@@ -1355,6 +1364,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
     body: JSON.stringify({
       name: dados.nome,
       type: dados.tipo || 'bank',
+      balance: Number(dados.saldo),
       iban: dados.iban || '',
       color_code: dados.cor || '#373392'
     })
@@ -1393,6 +1403,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
       name: dados.nome,
       category: dados.categoria,
       target_amount: Number(dados.objetivo),
+      saved_amount: Number(dados.valorGuardado || 0),
       deadline: dados.prazo
     })
   }), 'Projeto atualizado!');
