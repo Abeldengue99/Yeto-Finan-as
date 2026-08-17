@@ -1,5 +1,16 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { apiFetch } from '../utils/api';
+import {
+  enqueueOfflineOperation,
+  getBrowserOnlineStatus,
+  getOfflineQueue,
+  getOfflineQueueCount,
+  isOfflineError,
+  loadFinanceSnapshot,
+  makeOfflineId,
+  replaceOfflineQueue,
+  saveFinanceSnapshot
+} from '../utils/offlineSync';
 
 const FinanceContext = createContext();
 const FREE_TRIAL_DAYS = 30;
@@ -133,6 +144,10 @@ export function FinanceProvider({ children, userId, initialUser }) {
   const [pagamentosFixos, setPagamentosFixos] = useState([]);
   const [saldoTotal, setSaldoTotal] = useState(0);
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => getBrowserOnlineStatus());
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [isSyncingOffline, setIsSyncingOffline] = useState(false);
+  const offlineSyncingRef = useRef(false);
 
   // Função reutilizável para carregar dados do servidor
   const fetchUserData = async (uid) => {
@@ -219,20 +234,202 @@ export function FinanceProvider({ children, userId, initialUser }) {
       // Entradas podem ser mapeadas dos movimentos da API
       const entradas = data.movimentos ? data.movimentos.filter(m => m.tipo_movimento === 'entrada') : [];
       setReceitas(entradas);
+      setIsOnline(true);
+
+      await saveFinanceSnapshot(uid, {
+        accounts: data.accounts || [],
+        saldoTotal: data.saldoTotal || 0,
+        despesas: data.despesas || [],
+        dividas: data.dividas || [],
+        pagamentosFixos: data.pagamentosFixos || [],
+        projetos: data.projetos || [],
+        kixikilas: data.kixikilas || [],
+        orcamentos: data.orcamentos || [],
+        receitas: entradas,
+        user: data.user || null
+      });
+      return { fromCache: false };
 
     } catch (err) {
       console.error('Erro ao buscar finanças:', err);
+      const cached = await loadFinanceSnapshot(uid);
+
+      if (cached) {
+        setContas(cached.accounts || []);
+        setSaldoTotal(cached.saldoTotal || 0);
+        setDespesas(cached.despesas || []);
+        setDividas(cached.dividas || []);
+        setPagamentosFixos(cached.pagamentosFixos || []);
+        setProjetos(cached.projetos || []);
+        setKixikilas(cached.kixikilas || []);
+        setOrcamentos(cached.orcamentos || []);
+        setReceitas(cached.receitas || []);
+        setIsOnline(false);
+
+        if (cached.user) {
+          const planAccess = getPlanAccess(cached.user);
+          setUsuario(prev => ({
+            ...prev,
+            nome: cached.user.name || prev.nome,
+            email: cached.user.email || prev.email,
+            profissao: cached.user.occupation || prev.profissao,
+            foto: cached.user.avatar_url || prev.foto,
+            avatar: cached.user.name ? cached.user.name.charAt(0).toUpperCase() : prev.avatar,
+            plan_type: cached.user.plan_type || prev.plan_type,
+            subscription_plan: planAccess.subscription_plan,
+            created_at: cached.user.created_at || prev.created_at,
+            plan_expires_at: planAccess.planExpiresAt || prev.plan_expires_at,
+            trialDaysLeft: planAccess.trialDaysLeft,
+            isPremium: planAccess.isPremium,
+            planExpired: planAccess.planExpired,
+            isTrialActive: planAccess.isTrialActive,
+            hasAnnualAccess: planAccess.hasAnnualAccess
+          }));
+        }
+
+        mostrarAlerta('Modo offline', 'A mostrar os ultimos dados guardados neste dispositivo.', 'aviso', false);
+        return { fromCache: true };
+      }
+
       mostrarAlerta('Erro', 'Não foi possível carregar os dados. Verifique a conexão.', 'erro');
+      return { failed: true };
     }
   };
+
+  const refreshOfflineQueueCount = async () => {
+    if (!userId) {
+      setOfflineQueueCount(0);
+      return 0;
+    }
+
+    const count = await getOfflineQueueCount(userId);
+    setOfflineQueueCount(count);
+    return count;
+  };
+
+  const syncOfflineQueue = async () => {
+    if (!userId || offlineSyncingRef.current || !getBrowserOnlineStatus()) return;
+
+    const queue = await getOfflineQueue(userId);
+    setOfflineQueueCount(queue.length);
+    if (queue.length === 0) return;
+
+    offlineSyncingRef.current = true;
+    setIsSyncingOffline(true);
+
+    const remaining = [];
+    let syncedCount = 0;
+
+    for (let index = 0; index < queue.length; index += 1) {
+      const operation = queue[index];
+
+      try {
+        const response = await apiFetch(operation.path, {
+          method: operation.method || 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(operation.body || {})
+        });
+
+        if (!response.ok) {
+          remaining.push(operation, ...queue.slice(index + 1));
+          break;
+        }
+
+        syncedCount += 1;
+      } catch (error) {
+        remaining.push(operation, ...queue.slice(index + 1));
+        break;
+      }
+    }
+
+    await replaceOfflineQueue(userId, remaining);
+    setOfflineQueueCount(remaining.length);
+    offlineSyncingRef.current = false;
+    setIsSyncingOffline(false);
+
+    if (syncedCount > 0) {
+      const result = await fetchUserData(userId);
+      if (!result?.fromCache && !result?.failed) {
+        mostrarAlerta('Dados sincronizados', 'As alteracoes feitas offline foram enviadas com sucesso.', 'sucesso', false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const updateNetworkStatus = () => {
+      setIsOnline(getBrowserOnlineStatus());
+    };
+
+    updateNetworkStatus();
+    window.addEventListener('online', updateNetworkStatus);
+    window.addEventListener('offline', updateNetworkStatus);
+
+    return () => {
+      window.removeEventListener('online', updateNetworkStatus);
+      window.removeEventListener('offline', updateNetworkStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    refreshOfflineQueueCount();
+  }, [userId]);
+
+  useEffect(() => {
+    if (isOnline) {
+      syncOfflineQueue();
+    }
+  }, [isOnline, userId]);
+
+  useEffect(() => {
+    if (!userId || isLoadingData) return;
+
+    saveFinanceSnapshot(userId, {
+      accounts: contas,
+      saldoTotal,
+      despesas,
+      dividas,
+      pagamentosFixos,
+      projetos,
+      kixikilas,
+      orcamentos,
+      receitas,
+      user: {
+        name: usuario.nome,
+        email: usuario.email,
+        occupation: usuario.profissao,
+        avatar_url: usuario.foto,
+        plan_type: usuario.plan_type,
+        subscription_plan: usuario.subscription_plan,
+        created_at: usuario.created_at,
+        plan_expires_at: usuario.plan_expires_at
+      }
+    }).catch(error => {
+      console.warn('Nao foi possivel guardar o retrato offline.', error);
+    });
+  }, [
+    userId,
+    isLoadingData,
+    contas,
+    saldoTotal,
+    despesas,
+    dividas,
+    pagamentosFixos,
+    projetos,
+    kixikilas,
+    orcamentos,
+    receitas,
+    usuario
+  ]);
 
   // Carregar dados reais do servidor
   useEffect(() => {
     if (userId) {
       setIsLoadingData(true);
       fetchUserData(userId)
-        .then(() => {
-          mostrarAlerta('Dados Sincronizados', 'Dados sincronizados com sucesso.', 'sucesso', false);
+        .then((result) => {
+          if (!result?.fromCache && !result?.failed) {
+            mostrarAlerta('Dados Sincronizados', 'Dados sincronizados com sucesso.', 'sucesso', false);
+          }
         })
         .finally(() => {
           setIsLoadingData(false);
@@ -523,6 +720,50 @@ export function FinanceProvider({ children, userId, initialUser }) {
       }
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const amount = Number(novaDespesa.valor || 0);
+        const transactionDate = novaDespesa.data || new Date().toISOString().split('T')[0];
+        const despesaOffline = {
+          id: makeOfflineId('despesa'),
+          descricao: novaDespesa.descricao,
+          valor: amount,
+          contaId: novaDespesa.contaId,
+          data: transactionDate,
+          categoria: novaDespesa.categoria,
+          tipo_movimento: 'saida',
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        setDespesas(atuais => [despesaOffline, ...atuais]);
+        setContas(contasAtuais =>
+          contasAtuais.map(conta => (
+            conta.id === novaDespesa.contaId
+              ? { ...conta, saldo: Number(conta.saldo) - amount }
+              : conta
+          ))
+        );
+        setSaldoTotal(prev => prev - amount);
+
+        await enqueueOfflineOperation(userId, {
+          label: 'Despesa offline',
+          path: '/api/finances/transaction',
+          method: 'POST',
+          body: {
+            userId,
+            accountId: novaDespesa.contaId,
+            type: 'expense',
+            category: novaDespesa.categoria,
+            description: novaDespesa.descricao,
+            amount,
+            transaction_date: transactionDate
+          }
+        });
+        await refreshOfflineQueueCount();
+        mostrarAlerta('Guardado offline', 'A despesa foi guardada neste dispositivo e sera sincronizada quando houver internet.', 'aviso', false);
+        return;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível registar a despesa na base de dados.', 'erro');
     }
   };
@@ -593,6 +834,56 @@ export function FinanceProvider({ children, userId, initialUser }) {
       );
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const transactionDate = novaReceita.data || new Date().toISOString().split('T')[0];
+        const receitaOffline = {
+          id: makeOfflineId('receita'),
+          descricao: novaReceita.descricao,
+          valor: valorLiquido,
+          tipo_movimento: 'entrada',
+          data: transactionDate,
+          categoria: novaReceita.categoria || 'geral',
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        setReceitas(atuais => [receitaOffline, ...atuais]);
+        setContas(contasAtuais =>
+          contasAtuais.map(conta => (
+            conta.id === novaReceita.contaId
+              ? { ...conta, saldo: Number(conta.saldo) + valorLiquido }
+              : conta
+          ))
+        );
+        setSaldoTotal(prev => prev + valorLiquido);
+
+        setProjetos(projetosAtuais =>
+          projetosAtuais.map(proj => (
+            proj.id === 999
+              ? { ...proj, valorGuardado: Number(proj.valorGuardado) + valorCofre }
+              : proj
+          ))
+        );
+
+        await enqueueOfflineOperation(userId, {
+          label: 'Receita offline',
+          path: '/api/finances/transaction',
+          method: 'POST',
+          body: {
+            userId,
+            accountId: novaReceita.contaId,
+            type: 'income',
+            category: novaReceita.categoria || 'geral',
+            description: novaReceita.descricao,
+            amount: valorLiquido,
+            transaction_date: transactionDate
+          }
+        });
+        await refreshOfflineQueueCount();
+        mostrarAlerta('Guardado offline', 'A receita foi guardada neste dispositivo e sera sincronizada quando houver internet.', 'aviso', false);
+        return;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível registar a receita.', 'erro');
     }
   };
@@ -1431,6 +1722,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
       notificacoes, adicionarNotificacao, marcarNotificacaoLida, marcarTodasLidas,
       assistantUnreadCount, assistantLatestPreview, refreshAssistantSummary,
       alertaGlobal, setAlertaGlobal, mostrarAlerta,
+      isOnline, offlineQueueCount, isSyncingOffline, syncOfflineData: syncOfflineQueue,
       editarTransacao, eliminarTransacao,
       editarConta, eliminarConta,
       editarDivida, eliminarDivida,

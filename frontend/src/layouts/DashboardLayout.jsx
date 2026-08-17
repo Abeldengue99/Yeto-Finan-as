@@ -11,7 +11,8 @@ const ANNUAL_TABS = new Set(['previsao']);
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { 
     usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData,
-    movimentos = [], dividas = [], kixikilas = [], projetos = [], assistantUnreadCount = 0
+    movimentos = [], dividas = [], kixikilas = [], projetos = [], assistantUnreadCount = 0,
+    isOnline = true, offlineQueueCount = 0, isSyncingOffline = false, syncOfflineData
   } = useFinance();
   const { systemSettings, pendingPayments = [] } = useAdmin();
   
@@ -61,6 +62,18 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const searchResults = getSearchResults();
   const hasPremiumAccess = isAdmin || usuario?.isPremium;
   const hasAnnualAccess = isAdmin || usuario?.hasAnnualAccess;
+  const syncStatusText = !isOnline
+    ? (offlineQueueCount > 0 ? `Offline - ${offlineQueueCount} pendente(s)` : 'Offline')
+    : isSyncingOffline
+      ? 'A sincronizar...'
+      : offlineQueueCount > 0
+        ? `${offlineQueueCount} por sincronizar`
+        : 'Online';
+  const syncStatusColor = !isOnline
+    ? '#ef4444'
+    : offlineQueueCount > 0 || isSyncingOffline
+      ? '#f59e0b'
+      : '#10b981';
 
   const navigateToTab = (tab) => {
     if (ANNUAL_TABS.has(tab) && !hasAnnualAccess) {
@@ -358,6 +371,29 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               </div>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (isOnline && offlineQueueCount > 0 && !isSyncingOffline) {
+                syncOfflineData?.();
+              }
+            }}
+            title={offlineQueueCount > 0 ? 'Sincronizar dados offline' : 'Estado da ligacao'}
+            style={{
+              border: '1px solid rgba(16, 185, 129, 0.15)',
+              background: `${syncStatusColor}14`,
+              color: syncStatusColor,
+              borderRadius: '999px',
+              padding: '0.55rem 0.85rem',
+              fontWeight: 800,
+              fontSize: '0.78rem',
+              cursor: isOnline && offlineQueueCount > 0 ? 'pointer' : 'default',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {syncStatusText}
+          </button>
           
           <div className="user-actions" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
             {/* Notification Bell */}
