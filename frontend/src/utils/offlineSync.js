@@ -137,6 +137,15 @@ export async function replaceOfflineQueue(userId, queue) {
   return storageSet(userKey(QUEUE_PREFIX, userId), Array.isArray(queue) ? queue : []);
 }
 
+export async function removeOfflineOperations(userId, shouldRemove) {
+  if (!userId || typeof shouldRemove !== 'function') return 0;
+
+  const queue = await getOfflineQueue(userId);
+  const nextQueue = queue.filter(operation => !shouldRemove(operation));
+  await replaceOfflineQueue(userId, nextQueue);
+  return queue.length - nextQueue.length;
+}
+
 export async function enqueueOfflineOperation(userId, operation) {
   if (!userId) return null;
 

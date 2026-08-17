@@ -8,6 +8,7 @@ import {
   isOfflineError,
   loadFinanceSnapshot,
   makeOfflineId,
+  removeOfflineOperations,
   replaceOfflineQueue,
   saveFinanceSnapshot
 } from '../utils/offlineSync';
@@ -98,6 +99,131 @@ function buildInitialUsuario(user) {
     planExpired: planAccess.planExpired,
     isTrialActive: planAccess.isTrialActive,
     hasAnnualAccess: planAccess.hasAnnualAccess
+  };
+}
+
+function replaceOfflineRefs(value, idMap) {
+  if (!value || Object.keys(idMap).length === 0) return value;
+
+  if (typeof value === 'string') {
+    return idMap[value] ?? value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => replaceOfflineRefs(item, idMap));
+  }
+
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, replaceOfflineRefs(item, idMap)])
+    );
+  }
+
+  return value;
+}
+
+function resolveOfflinePath(path, idMap) {
+  return Object.entries(idMap).reduce(
+    (resolvedPath, [temporaryId, realId]) => resolvedPath.replaceAll(temporaryId, String(realId)),
+    path
+  );
+}
+
+function resolveQueuedOperation(operation, idMap) {
+  return {
+    ...operation,
+    path: resolveOfflinePath(operation.path, idMap),
+    body: replaceOfflineRefs(operation.body || {}, idMap)
+  };
+}
+
+function isSameMonthKey(dateValue, monthKey) {
+  return String(dateValue || '').slice(0, 7) === monthKey;
+}
+
+function normalizeShoppingLists(lists = []) {
+  return lists.map(list => {
+    const itens = (list.itens || []).map(item => {
+      const quantidade = Number(item.quantidade || 1);
+      const precoEstimado = Number(item.precoEstimado || 0);
+      const total = quantidade * precoEstimado;
+
+      return {
+        ...item,
+        quantidade,
+        precoEstimado,
+        total
+      };
+    });
+
+    return {
+      ...list,
+      itens,
+      totalEstimado: itens.reduce((sum, item) => sum + Number(item.total || 0), 0)
+    };
+  });
+}
+
+function buildShoppingSummary(lists, monthKey, budgets, expenses) {
+  const normalizedLists = normalizeShoppingLists(lists);
+  const items = normalizedLists.flatMap(list => list.itens || []);
+  const plannedByCategory = items.reduce((acc, item) => {
+    const category = item.categoria || 'Sem categoria';
+    acc[category] = (acc[category] || 0) + Number(item.total || 0);
+    return acc;
+  }, {});
+  const monthExpenses = expenses.filter(item => isSameMonthKey(item.data, monthKey));
+  const spentByCategory = monthExpenses.reduce((acc, item) => {
+    const category = item.categoria || 'Sem categoria';
+    acc[category] = (acc[category] || 0) + Number(item.valor || 0);
+    return acc;
+  }, {});
+  const monthBudgets = budgets.filter(item => !item.mes || item.mes === monthKey);
+  const budgetByCategory = monthBudgets.reduce((acc, item) => {
+    acc[item.categoria] = Number(item.limite || 0);
+    return acc;
+  }, {});
+  const categories = [...new Set([
+    ...Object.keys(plannedByCategory),
+    ...Object.keys(spentByCategory),
+    ...Object.keys(budgetByCategory)
+  ])].filter(Boolean);
+  const categoryAnalysis = categories.map(category => {
+    const budget = budgetByCategory[category] || 0;
+    const spent = spentByCategory[category] || 0;
+    const planned = plannedByCategory[category] || 0;
+    const afterShopping = budget - spent - planned;
+    const status = budget <= 0
+      ? 'sem_orcamento'
+      : afterShopping < 0
+        ? 'excede'
+        : afterShopping <= budget * 0.15
+          ? 'apertado'
+          : 'ok';
+
+    return {
+      categoria: category,
+      orcamento: budget,
+      jaGasto: spent,
+      previstoLista: planned,
+      saldoDepoisCompra: afterShopping,
+      status
+    };
+  });
+  const totalEstimated = normalizedLists.reduce((sum, list) => sum + Number(list.totalEstimado || 0), 0);
+  const totalBudget = monthBudgets.reduce((sum, item) => sum + Number(item.limite || 0), 0);
+  const totalSpent = monthExpenses.reduce((sum, item) => sum + Number(item.valor || 0), 0);
+
+  return {
+    lists: normalizedLists,
+    summary: {
+      totalEstimated,
+      totalBudget,
+      totalSpent,
+      totalAvailable: totalBudget - totalSpent,
+      afterShoppingBalance: totalBudget - totalSpent - totalEstimated,
+      categoryAnalysis
+    }
   };
 }
 
@@ -287,7 +413,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
           }));
         }
 
-        mostrarAlerta('Modo offline', 'A mostrar os ultimos dados guardados neste dispositivo.', 'aviso', false);
+        mostrarAlerta('Modo offline', 'A mostrar os últimos dados guardados neste dispositivo.', 'aviso', false);
         return { fromCache: true };
       }
 
@@ -318,26 +444,39 @@ export function FinanceProvider({ children, userId, initialUser }) {
     setIsSyncingOffline(true);
 
     const remaining = [];
+    const idMap = {};
     let syncedCount = 0;
 
     for (let index = 0; index < queue.length; index += 1) {
       const operation = queue[index];
+      const resolvedOperation = resolveQueuedOperation(operation, idMap);
 
       try {
-        const response = await apiFetch(operation.path, {
-          method: operation.method || 'POST',
+        const response = await apiFetch(resolvedOperation.path, {
+          method: resolvedOperation.method || 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(operation.body || {})
+          body: JSON.stringify(resolvedOperation.body || {})
         });
+        const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          remaining.push(operation, ...queue.slice(index + 1));
+          remaining.push(
+            resolvedOperation,
+            ...queue.slice(index + 1).map(item => resolveQueuedOperation(item, idMap))
+          );
           break;
+        }
+
+        if (operation.localId && data?.id) {
+          idMap[operation.localId] = data.id;
         }
 
         syncedCount += 1;
       } catch (error) {
-        remaining.push(operation, ...queue.slice(index + 1));
+        remaining.push(
+          resolvedOperation,
+          ...queue.slice(index + 1).map(item => resolveQueuedOperation(item, idMap))
+        );
         break;
       }
     }
@@ -350,9 +489,33 @@ export function FinanceProvider({ children, userId, initialUser }) {
     if (syncedCount > 0) {
       const result = await fetchUserData(userId);
       if (!result?.fromCache && !result?.failed) {
-        mostrarAlerta('Dados sincronizados', 'As alteracoes feitas offline foram enviadas com sucesso.', 'sucesso', false);
+        mostrarAlerta('Dados sincronizados', 'As alterações feitas offline foram enviadas com sucesso.', 'sucesso', false);
       }
     }
+  };
+
+  const queueOfflineOperation = async (operation) => {
+    await enqueueOfflineOperation(userId, operation);
+    await refreshOfflineQueueCount();
+  };
+
+  const showOfflineSaved = (message) => {
+    mostrarAlerta('Guardado offline', message, 'aviso', false);
+  };
+
+  const updateShoppingListsLocal = (month, updater) => {
+    setListaCompras(prev => {
+      const monthKey = month || prev.month || new Date().toISOString().slice(0, 7);
+      const currentLists = prev.lists || [];
+      const nextLists = typeof updater === 'function' ? updater(currentLists) : currentLists;
+      const built = buildShoppingSummary(nextLists, monthKey, orcamentos, despesas);
+
+      return {
+        month: monthKey,
+        lists: built.lists,
+        summary: built.summary
+      };
+    });
   };
 
   useEffect(() => {
@@ -760,7 +923,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
           }
         });
         await refreshOfflineQueueCount();
-        mostrarAlerta('Guardado offline', 'A despesa foi guardada neste dispositivo e sera sincronizada quando houver internet.', 'aviso', false);
+        mostrarAlerta('Guardado offline', 'A despesa foi guardada neste dispositivo e será sincronizada quando houver internet.', 'aviso', false);
         return;
       }
 
@@ -880,7 +1043,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
           }
         });
         await refreshOfflineQueueCount();
-        mostrarAlerta('Guardado offline', 'A receita foi guardada neste dispositivo e sera sincronizada quando houver internet.', 'aviso', false);
+        mostrarAlerta('Guardado offline', 'A receita foi guardada neste dispositivo e será sincronizada quando houver internet.', 'aviso', false);
         return;
       }
 
@@ -971,6 +1134,41 @@ export function FinanceProvider({ children, userId, initialUser }) {
       mostrarAlerta('Conta Adicionada', `A conta ${contaFormatada.nome} foi registada com sucesso.`, 'sucesso');
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const localId = makeOfflineId('conta');
+        const contaFormatada = {
+          id: localId,
+          nome: novaConta.nome,
+          tipo: novaConta.tipo || 'bank',
+          saldo: Number(novaConta.saldo || 0),
+          cor: novaConta.cor || '#373392',
+          iban: novaConta.iban || '',
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        setContas(atuais => [...atuais, contaFormatada]);
+        setSaldoTotal(prev => prev + contaFormatada.saldo);
+        await queueOfflineOperation({
+          label: 'Conta offline',
+          localId,
+          resource: 'account',
+          path: '/api/finances/account',
+          method: 'POST',
+          body: {
+            userId,
+            name: novaConta.nome,
+            type: novaConta.tipo || 'bank',
+            balance: Number(novaConta.saldo || 0),
+            currency: 'AOA',
+            color_code: novaConta.cor || '#373392',
+            iban: novaConta.iban || ''
+          }
+        });
+        showOfflineSaved('A conta foi guardada neste dispositivo e será sincronizada quando houver internet.');
+        return contaFormatada;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível criar a conta na base de dados.', 'erro');
     }
   };
@@ -1008,6 +1206,40 @@ export function FinanceProvider({ children, userId, initialUser }) {
       mostrarAlerta('Nova Dívida Registada', `A dívida com ${dividaFormatada.pessoa} foi registada com sucesso.`, 'sucesso');
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const localId = makeOfflineId('divida');
+        const dividaFormatada = {
+          id: localId,
+          pessoa: novaDivida.pessoa,
+          tipo: novaDivida.tipo === 'a_receber' ? 'a_receber' : 'a_pagar',
+          valor: Number(novaDivida.valor || 0),
+          finalidade: novaDivida.finalidade || '',
+          dataVencimento: novaDivida.dataVencimento || '',
+          paga: false,
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        setDividas(atuais => [dividaFormatada, ...atuais]);
+        await queueOfflineOperation({
+          label: 'Divida offline',
+          localId,
+          resource: 'debt',
+          path: '/api/finances/debt',
+          method: 'POST',
+          body: {
+            userId,
+            person_name: novaDivida.pessoa,
+            type: novaDivida.tipo === 'a_receber' ? 'to_receive' : 'to_pay',
+            amount: Number(novaDivida.valor || 0),
+            due_date: novaDivida.dataVencimento || null,
+            purpose: novaDivida.finalidade || ''
+          }
+        });
+        showOfflineSaved('A dívida foi guardada neste dispositivo e será sincronizada quando houver internet.');
+        return dividaFormatada;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível criar a dívida.', 'erro');
     }
   };
@@ -1043,6 +1275,37 @@ export function FinanceProvider({ children, userId, initialUser }) {
       mostrarAlerta('Dívida Liquidada', `A dívida de Kz ${divida.valor.toLocaleString()} com ${divida.pessoa} foi liquidada!`, 'sucesso');
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const divida = dividas.find(d => d.id === dividaId);
+        if (!divida) {
+          mostrarAlerta('Erro', 'Dívida não encontrada para liquidar offline.', 'erro');
+          return false;
+        }
+
+        setContas(contasAtuais =>
+          contasAtuais.map(conta => {
+            if (conta.id === contaId) {
+              const valor = Number(divida.valor);
+              const novoSaldo = divida.tipo === 'a_receber' ? Number(conta.saldo) + valor : Number(conta.saldo) - valor;
+              return { ...conta, saldo: novoSaldo };
+            }
+            return conta;
+          })
+        );
+        setDividas(dividasAtuais => dividasAtuais.map(d => d.id === dividaId ? { ...d, paga: true, syncStatus: 'pending' } : d));
+        setSaldoTotal(prev => prev + (divida.tipo === 'a_receber' ? Number(divida.valor) : -Number(divida.valor)));
+
+        await queueOfflineOperation({
+          label: 'Liquidacao de divida offline',
+          resource: 'debt-payment',
+          path: `/api/finances/debt/${dividaId}/pay`,
+          method: 'PUT',
+          body: { accountId: contaId }
+        });
+        showOfflineSaved('A liquidação da dívida foi guardada e será sincronizada quando houver internet.');
+        return true;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível liquidar a dívida.', 'erro');
     }
   };
@@ -1266,6 +1529,38 @@ export function FinanceProvider({ children, userId, initialUser }) {
       mostrarAlerta('Pagamento Agendado', `Lembrete criado para "${fixoFormatado.nome}" dia ${fixoFormatado.diaVencimento}.`, 'sucesso');
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const localId = makeOfflineId('pagamento_fixo');
+        const fixoFormatado = {
+          id: localId,
+          nome: novo.nome,
+          categoria: novo.categoria,
+          valor: Number(novo.valor || 0),
+          diaVencimento: Number(novo.diaVencimento || 1),
+          pagoEsteMes: false,
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        setPagamentosFixos(atuais => [fixoFormatado, ...atuais]);
+        await queueOfflineOperation({
+          label: 'Pagamento fixo offline',
+          localId,
+          resource: 'fixed-payment',
+          path: '/api/finances/fixed-payment',
+          method: 'POST',
+          body: {
+            userId,
+            name: novo.nome,
+            category: novo.categoria,
+            amount: Number(novo.valor || 0),
+            due_day: Number(novo.diaVencimento || 1)
+          }
+        });
+        showOfflineSaved('O pagamento fixo foi guardado neste dispositivo e será sincronizado quando houver internet.');
+        return fixoFormatado;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível registar o pagamento fixo.', 'erro');
     }
   };
@@ -1305,6 +1600,34 @@ export function FinanceProvider({ children, userId, initialUser }) {
       mostrarAlerta('Pagamento Realizado', `O pagamento fixo de ${fixo.nome} foi liquidado.`, 'sucesso');
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const fixo = pagamentosFixos.find(p => p.id === id);
+        if (!fixo) {
+          mostrarAlerta('Erro', 'Pagamento fixo não encontrado para pagar offline.', 'erro');
+          return false;
+        }
+
+        setPagamentosFixos(atuais => atuais.map(p => p.id === id ? { ...p, pagoEsteMes: true, syncStatus: 'pending' } : p));
+        setContas(contasAtuais =>
+          contasAtuais.map(conta => (
+            conta.id === targetAccountId
+              ? { ...conta, saldo: Number(conta.saldo) - Number(fixo.valor) }
+              : conta
+          ))
+        );
+        setSaldoTotal(prev => prev - Number(fixo.valor));
+
+        await queueOfflineOperation({
+          label: 'Pagamento fixo pago offline',
+          resource: 'fixed-payment-pay',
+          path: `/api/finances/fixed-payment/${id}/pay`,
+          method: 'PUT',
+          body: { accountId: targetAccountId }
+        });
+        showOfflineSaved('O pagamento fixo foi marcado como pago e será sincronizado quando houver internet.');
+        return true;
+      }
+
       mostrarAlerta('Erro', 'Não foi possível efetuar o pagamento.', 'erro');
     }
   };
@@ -1327,6 +1650,12 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return lista;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const fallback = mes ? orcamentos.filter(item => item.mes === mes) : orcamentos;
+        setIsOnline(false);
+        return fallback;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível carregar os orçamentos.', 'erro');
       return [];
     }
@@ -1365,6 +1694,38 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return data;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const existing = orcamentos.find(item => item.categoria === categoria && item.mes === mes);
+        const localBudget = {
+          id: existing?.id || makeOfflineId('orcamento'),
+          categoria,
+          mes,
+          limite: Number(limite || 0),
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        setOrcamentos(atuais => [
+          ...atuais.filter(item => !(item.categoria === categoria && item.mes === mes)),
+          localBudget
+        ].sort((a, b) => a.categoria.localeCompare(b.categoria)));
+        await queueOfflineOperation({
+          label: 'Orcamento offline',
+          localId: String(localBudget.id).startsWith('offline_') ? localBudget.id : undefined,
+          resource: 'budget',
+          path: '/api/finances/budget',
+          method: 'POST',
+          body: {
+            userId,
+            category: categoria,
+            month: mes,
+            monthlyLimit: Number(limite || 0)
+          }
+        });
+        showOfflineSaved('O orçamento foi guardado neste dispositivo e será sincronizado quando houver internet.');
+        return localBudget;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível guardar o orçamento.', 'erro');
       return null;
     }
@@ -1384,6 +1745,26 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return true;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        setOrcamentos(atuais => atuais.filter(item => item.id !== id));
+
+        if (String(id).startsWith('offline_')) {
+          await removeOfflineOperations(userId, operation => operation.localId === id);
+        } else {
+          await queueOfflineOperation({
+            label: 'Eliminar orcamento offline',
+            resource: 'budget-delete',
+            path: `/api/finances/budget/${id}`,
+            method: 'DELETE',
+            body: {}
+          });
+        }
+
+        await refreshOfflineQueueCount();
+        showOfflineSaved('A eliminação do orçamento será sincronizada quando houver internet.');
+        return true;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível eliminar o orçamento.', 'erro');
       return false;
     }
@@ -1468,6 +1849,19 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return payload;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        setIsOnline(false);
+        if (!mes || listaCompras.month === mes) {
+          return listaCompras;
+        }
+
+        return {
+          month: mes || '',
+          lists: [],
+          summary: buildShoppingSummary([], mes || '', orcamentos, despesas).summary
+        };
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível carregar a lista de compras.', 'erro');
       return { month: mes || '', lists: [], summary: null };
     }
@@ -1493,6 +1887,31 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return data;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const localId = makeOfflineId('lista');
+        const localList = {
+          id: localId,
+          nome,
+          mes,
+          totalEstimado: 0,
+          itens: [],
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        updateShoppingListsLocal(mes, lists => [localList, ...lists]);
+        await queueOfflineOperation({
+          label: 'Lista de compras offline',
+          localId,
+          resource: 'shopping-list',
+          path: '/api/finances/shopping-list',
+          method: 'POST',
+          body: { userId, name: nome, month: mes }
+        });
+        showOfflineSaved('A lista de compras foi guardada e será sincronizada quando houver internet.');
+        return localList;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível criar a lista de compras.', 'erro');
       return null;
     }
@@ -1520,6 +1939,42 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return data;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const localId = makeOfflineId('item_lista');
+        const itemFormatado = {
+          id: localId,
+          nome: item.nome,
+          categoria: item.categoria,
+          quantidade: Number(item.quantidade || 1),
+          precoEstimado: Number(item.precoEstimado || 0),
+          total: Number(item.quantidade || 1) * Number(item.precoEstimado || 0),
+          comprado: false,
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        updateShoppingListsLocal(mes, lists => lists.map(list => (
+          list.id === listaId
+            ? { ...list, itens: [...(list.itens || []), itemFormatado] }
+            : list
+        )));
+        await queueOfflineOperation({
+          label: 'Item de lista offline',
+          localId,
+          resource: 'shopping-list-item',
+          path: `/api/finances/shopping-list/${listaId}/item`,
+          method: 'POST',
+          body: {
+            name: item.nome,
+            category: item.categoria,
+            quantity: Number(item.quantidade || 1),
+            estimatedPrice: Number(item.precoEstimado || 0)
+          }
+        });
+        showOfflineSaved('O item foi guardado e será sincronizado quando houver internet.');
+        return itemFormatado;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível adicionar o item.', 'erro');
       return null;
     }
@@ -1548,6 +2003,41 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return data;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        const itemAtualizado = {
+          id: itemId,
+          nome: item.nome,
+          categoria: item.categoria,
+          quantidade: Number(item.quantidade || 1),
+          precoEstimado: Number(item.precoEstimado || 0),
+          total: Number(item.quantidade || 1) * Number(item.precoEstimado || 0),
+          comprado: Boolean(item.comprado),
+          offline: true,
+          syncStatus: 'pending'
+        };
+
+        updateShoppingListsLocal(mes, lists => lists.map(list => ({
+          ...list,
+          itens: (list.itens || []).map(currentItem => (
+            currentItem.id === itemId ? { ...currentItem, ...itemAtualizado } : currentItem
+          ))
+        })));
+        await queueOfflineOperation({
+          label: 'Atualizar item de lista offline',
+          resource: 'shopping-list-item-update',
+          path: `/api/finances/shopping-list-item/${itemId}`,
+          method: 'PUT',
+          body: {
+            name: item.nome,
+            category: item.categoria,
+            quantity: Number(item.quantidade || 1),
+            estimatedPrice: Number(item.precoEstimado || 0),
+            isChecked: Boolean(item.comprado)
+          }
+        });
+        return itemAtualizado;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível atualizar o item.', 'erro');
       return null;
     }
@@ -1566,6 +2056,29 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return true;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        updateShoppingListsLocal(mes, lists => lists.map(list => ({
+          ...list,
+          itens: (list.itens || []).filter(item => item.id !== itemId)
+        })));
+
+        if (String(itemId).startsWith('offline_')) {
+          await removeOfflineOperations(userId, operation => operation.localId === itemId || operation.path?.includes(String(itemId)));
+        } else {
+          await queueOfflineOperation({
+            label: 'Eliminar item de lista offline',
+            resource: 'shopping-list-item-delete',
+            path: `/api/finances/shopping-list-item/${itemId}`,
+            method: 'DELETE',
+            body: {}
+          });
+        }
+
+        await refreshOfflineQueueCount();
+        showOfflineSaved('A remoção do item será sincronizada quando houver internet.');
+        return true;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível remover o item.', 'erro');
       return false;
     }
@@ -1585,6 +2098,26 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return true;
     } catch (err) {
       console.error(err);
+      if (isOfflineError(err)) {
+        updateShoppingListsLocal(mes, lists => lists.filter(list => list.id !== listaId));
+
+        if (String(listaId).startsWith('offline_')) {
+          await removeOfflineOperations(userId, operation => operation.localId === listaId || operation.path?.includes(String(listaId)));
+        } else {
+          await queueOfflineOperation({
+            label: 'Eliminar lista de compras offline',
+            resource: 'shopping-list-delete',
+            path: `/api/finances/shopping-list/${listaId}`,
+            method: 'DELETE',
+            body: {}
+          });
+        }
+
+        await refreshOfflineQueueCount();
+        showOfflineSaved('A eliminação da lista será sincronizada quando houver internet.');
+        return true;
+      }
+
       mostrarAlerta('Erro', err.message || 'Não foi possível eliminar a lista.', 'erro');
       return false;
     }
