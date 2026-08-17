@@ -272,6 +272,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isOnline, setIsOnline] = useState(() => getBrowserOnlineStatus());
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [offlineQueueItems, setOfflineQueueItems] = useState([]);
   const [isSyncingOffline, setIsSyncingOffline] = useState(false);
   const offlineSyncingRef = useRef(false);
 
@@ -428,15 +429,17 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return 0;
     }
 
-    const count = await getOfflineQueueCount(userId);
-    setOfflineQueueCount(count);
-    return count;
+    const queue = await getOfflineQueue(userId);
+    setOfflineQueueItems(queue);
+    setOfflineQueueCount(queue.length);
+    return queue.length;
   };
 
   const syncOfflineQueue = async () => {
     if (!userId || offlineSyncingRef.current || !getBrowserOnlineStatus()) return;
 
     const queue = await getOfflineQueue(userId);
+    setOfflineQueueItems(queue);
     setOfflineQueueCount(queue.length);
     if (queue.length === 0) return;
 
@@ -482,6 +485,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
     }
 
     await replaceOfflineQueue(userId, remaining);
+    setOfflineQueueItems(remaining);
     setOfflineQueueCount(remaining.length);
     offlineSyncingRef.current = false;
     setIsSyncingOffline(false);
@@ -2152,7 +2156,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
   };
 
   // --- EDIÇÃO E ELIMINAÇÃO ---
-  const handleBackendOp = async (opName, fetchCall, successMsg) => {
+  const handleBackendOp = async (opName, fetchCall, successMsg, offlineFallback) => {
     try {
       const res = await fetchCall();
       if (!res.ok) {
@@ -2164,9 +2168,22 @@ export function FinanceProvider({ children, userId, initialUser }) {
       return true;
     } catch (err) {
       console.error(err);
+      if (offlineFallback && isOfflineError(err)) {
+        return offlineFallback();
+      }
+
       mostrarAlerta('Erro', err.message || `Não foi possível ${opName}.`, 'erro');
       return false;
     }
+  };
+
+  const removeLocalPending = async (id) => {
+    await removeOfflineOperations(userId, operation => (
+      operation.localId === id ||
+      operation.path?.includes(String(id)) ||
+      JSON.stringify(operation.body || {}).includes(String(id))
+    ));
+    await refreshOfflineQueueCount();
   };
 
   const editarTransacao = (id, dados) => handleBackendOp('editar transação', () => apiFetch(`/api/finances/transaction/${id}`, {
@@ -2179,9 +2196,86 @@ export function FinanceProvider({ children, userId, initialUser }) {
       accountId: dados.contaId,
       type: dados.type || (dados.tipo_movimento === 'entrada' ? 'income' : 'expense')
     })
-  }), 'Transação atualizada!');
+  }), 'Transação atualizada!', async () => {
+    const original = [...despesas, ...receitas].find(item => item.id === id);
+    if (!original) return false;
 
-  const eliminarTransacao = (id) => handleBackendOp('eliminar transação', () => apiFetch(`/api/finances/transaction/${id}`, { method: 'DELETE' }), 'Transação eliminada!');
+    const originalAccountId = original.contaId || original.account_id || dados.contaId;
+    const oldImpact = original.tipo_movimento === 'entrada' ? Number(original.valor || 0) : -Number(original.valor || 0);
+    const nextType = dados.type || (dados.tipo_movimento === 'entrada' ? 'income' : 'expense');
+    const nextTipoMovimento = nextType === 'income' ? 'entrada' : 'saida';
+    const nextImpact = nextTipoMovimento === 'entrada' ? Number(dados.valor || 0) : -Number(dados.valor || 0);
+    const updated = {
+      ...original,
+      descricao: dados.descricao,
+      valor: Number(dados.valor || 0),
+      categoria: dados.categoria,
+      data: dados.data,
+      contaId: dados.contaId,
+      tipo_movimento: nextTipoMovimento,
+      offline: true,
+      syncStatus: 'pending'
+    };
+
+    setDespesas(atuais => nextTipoMovimento === 'saida'
+      ? [updated, ...atuais.filter(item => item.id !== id)]
+      : atuais.filter(item => item.id !== id));
+    setReceitas(atuais => nextTipoMovimento === 'entrada'
+      ? [updated, ...atuais.filter(item => item.id !== id)]
+      : atuais.filter(item => item.id !== id));
+    setContas(atuais => atuais.map(conta => {
+      let saldo = Number(conta.saldo || 0);
+      if (conta.id === originalAccountId) saldo -= oldImpact;
+      if (conta.id === dados.contaId) saldo += nextImpact;
+      return { ...conta, saldo };
+    }));
+    setSaldoTotal(prev => prev - oldImpact + nextImpact);
+
+    await queueOfflineOperation({
+      label: 'Editar transação offline',
+      resource: 'transaction-update',
+      path: `/api/finances/transaction/${id}`,
+      method: 'PUT',
+      body: {
+        description: dados.descricao,
+        amount: Number(dados.valor || 0),
+        category: dados.categoria,
+        transaction_date: dados.data,
+        accountId: dados.contaId,
+        type: nextType
+      }
+    });
+    showOfflineSaved('A alteração da transação será sincronizada quando houver internet.');
+    return true;
+  });
+
+  const eliminarTransacao = (id) => handleBackendOp('eliminar transação', () => apiFetch(`/api/finances/transaction/${id}`, { method: 'DELETE' }), 'Transação eliminada!', async () => {
+    const original = [...despesas, ...receitas].find(item => item.id === id);
+    if (!original) return false;
+
+    const originalAccountId = original.contaId || original.account_id;
+    const impact = original.tipo_movimento === 'entrada' ? Number(original.valor || 0) : -Number(original.valor || 0);
+    setDespesas(atuais => atuais.filter(item => item.id !== id));
+    setReceitas(atuais => atuais.filter(item => item.id !== id));
+    setContas(atuais => atuais.map(conta => (
+      conta.id === originalAccountId ? { ...conta, saldo: Number(conta.saldo || 0) - impact } : conta
+    )));
+    setSaldoTotal(prev => prev - impact);
+
+    if (String(id).startsWith('offline_')) {
+      await removeLocalPending(id);
+    } else {
+      await queueOfflineOperation({
+        label: 'Eliminar transação offline',
+        resource: 'transaction-delete',
+        path: `/api/finances/transaction/${id}`,
+        method: 'DELETE',
+        body: {}
+      });
+    }
+    showOfflineSaved('A eliminação da transação será sincronizada quando houver internet.');
+    return true;
+  });
 
   const editarConta = (id, dados) => handleBackendOp('editar conta', () => apiFetch(`/api/finances/account/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2192,9 +2286,59 @@ export function FinanceProvider({ children, userId, initialUser }) {
       iban: dados.iban || '',
       color_code: dados.cor || '#373392'
     })
-  }), 'Conta atualizada!');
+  }), 'Conta atualizada!', async () => {
+    const conta = contas.find(item => item.id === id);
+    const oldBalance = Number(conta?.saldo || 0);
+    const nextBalance = Number(dados.saldo || 0);
 
-  const eliminarConta = (id) => handleBackendOp('eliminar conta', () => apiFetch(`/api/finances/account/${id}`, { method: 'DELETE' }), 'Conta eliminada!');
+    setContas(atuais => atuais.map(item => item.id === id ? {
+      ...item,
+      nome: dados.nome,
+      tipo: dados.tipo || item.tipo || 'bank',
+      saldo: nextBalance,
+      iban: dados.iban || '',
+      cor: dados.cor || item.cor || '#373392',
+      offline: true,
+      syncStatus: 'pending'
+    } : item));
+    setSaldoTotal(prev => prev - oldBalance + nextBalance);
+
+    await queueOfflineOperation({
+      label: 'Editar conta offline',
+      resource: 'account-update',
+      path: `/api/finances/account/${id}`,
+      method: 'PUT',
+      body: {
+        name: dados.nome,
+        type: dados.tipo || 'bank',
+        balance: nextBalance,
+        iban: dados.iban || '',
+        color_code: dados.cor || '#373392'
+      }
+    });
+    showOfflineSaved('A alteração da conta será sincronizada quando houver internet.');
+    return true;
+  });
+
+  const eliminarConta = (id) => handleBackendOp('eliminar conta', () => apiFetch(`/api/finances/account/${id}`, { method: 'DELETE' }), 'Conta eliminada!', async () => {
+    const conta = contas.find(item => item.id === id);
+    setContas(atuais => atuais.filter(item => item.id !== id));
+    setSaldoTotal(prev => prev - Number(conta?.saldo || 0));
+
+    if (String(id).startsWith('offline_')) {
+      await removeLocalPending(id);
+    } else {
+      await queueOfflineOperation({
+        label: 'Eliminar conta offline',
+        resource: 'account-delete',
+        path: `/api/finances/account/${id}`,
+        method: 'DELETE',
+        body: {}
+      });
+    }
+    showOfflineSaved('A eliminação da conta será sincronizada quando houver internet.');
+    return true;
+  });
 
   const editarDivida = (id, dados) => handleBackendOp('editar dívida', () => apiFetch(`/api/finances/debt/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2205,9 +2349,50 @@ export function FinanceProvider({ children, userId, initialUser }) {
       due_date: dados.dataVencimento,
       purpose: dados.finalidade
     })
-  }), 'Dívida atualizada!');
+  }), 'Dívida atualizada!', async () => {
+    setDividas(atuais => atuais.map(item => item.id === id ? {
+      ...item,
+      pessoa: dados.pessoa,
+      tipo: dados.tipo,
+      valor: Number(dados.valor || 0),
+      dataVencimento: dados.dataVencimento,
+      finalidade: dados.finalidade,
+      offline: true,
+      syncStatus: 'pending'
+    } : item));
+    await queueOfflineOperation({
+      label: 'Editar dívida offline',
+      resource: 'debt-update',
+      path: `/api/finances/debt/${id}`,
+      method: 'PUT',
+      body: {
+        person_name: dados.pessoa,
+        type: dados.tipo === 'a_receber' ? 'to_receive' : 'to_pay',
+        amount: Number(dados.valor || 0),
+        due_date: dados.dataVencimento,
+        purpose: dados.finalidade
+      }
+    });
+    showOfflineSaved('A alteração da dívida será sincronizada quando houver internet.');
+    return true;
+  });
 
-  const eliminarDivida = (id) => handleBackendOp('eliminar dívida', () => apiFetch(`/api/finances/debt/${id}`, { method: 'DELETE' }), 'Dívida eliminada!');
+  const eliminarDivida = (id) => handleBackendOp('eliminar dívida', () => apiFetch(`/api/finances/debt/${id}`, { method: 'DELETE' }), 'Dívida eliminada!', async () => {
+    setDividas(atuais => atuais.filter(item => item.id !== id));
+    if (String(id).startsWith('offline_')) {
+      await removeLocalPending(id);
+    } else {
+      await queueOfflineOperation({
+        label: 'Eliminar dívida offline',
+        resource: 'debt-delete',
+        path: `/api/finances/debt/${id}`,
+        method: 'DELETE',
+        body: {}
+      });
+    }
+    showOfflineSaved('A eliminação da dívida será sincronizada quando houver internet.');
+    return true;
+  });
 
   const editarPagamentoFixo = (id, dados) => handleBackendOp('editar pagamento fixo', () => apiFetch(`/api/finances/fixed-payment/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2217,9 +2402,48 @@ export function FinanceProvider({ children, userId, initialUser }) {
       due_day: Number(dados.diaVencimento),
       category: dados.categoria
     })
-  }), 'Pagamento fixo atualizado!');
+  }), 'Pagamento fixo atualizado!', async () => {
+    setPagamentosFixos(atuais => atuais.map(item => item.id === id ? {
+      ...item,
+      nome: dados.nome,
+      categoria: dados.categoria,
+      valor: Number(dados.valor || 0),
+      diaVencimento: Number(dados.diaVencimento || item.diaVencimento || 1),
+      offline: true,
+      syncStatus: 'pending'
+    } : item));
+    await queueOfflineOperation({
+      label: 'Editar pagamento fixo offline',
+      resource: 'fixed-payment-update',
+      path: `/api/finances/fixed-payment/${id}`,
+      method: 'PUT',
+      body: {
+        name: dados.nome,
+        amount: Number(dados.valor || 0),
+        due_day: Number(dados.diaVencimento || 1),
+        category: dados.categoria
+      }
+    });
+    showOfflineSaved('A alteração do pagamento fixo será sincronizada quando houver internet.');
+    return true;
+  });
 
-  const eliminarPagamentoFixo = (id) => handleBackendOp('eliminar pagamento fixo', () => apiFetch(`/api/finances/fixed-payment/${id}`, { method: 'DELETE' }), 'Pagamento fixo eliminado!');
+  const eliminarPagamentoFixo = (id) => handleBackendOp('eliminar pagamento fixo', () => apiFetch(`/api/finances/fixed-payment/${id}`, { method: 'DELETE' }), 'Pagamento fixo eliminado!', async () => {
+    setPagamentosFixos(atuais => atuais.filter(item => item.id !== id));
+    if (String(id).startsWith('offline_')) {
+      await removeLocalPending(id);
+    } else {
+      await queueOfflineOperation({
+        label: 'Eliminar pagamento fixo offline',
+        resource: 'fixed-payment-delete',
+        path: `/api/finances/fixed-payment/${id}`,
+        method: 'DELETE',
+        body: {}
+      });
+    }
+    showOfflineSaved('A eliminação do pagamento fixo será sincronizada quando houver internet.');
+    return true;
+  });
 
   const editarProjeto = (id, dados) => handleBackendOp('editar projeto', () => apiFetch(`/api/finances/project/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2230,9 +2454,50 @@ export function FinanceProvider({ children, userId, initialUser }) {
       saved_amount: Number(dados.valorGuardado || 0),
       deadline: dados.prazo
     })
-  }), 'Projeto atualizado!');
+  }), 'Projeto atualizado!', async () => {
+    setProjetos(atuais => atuais.map(item => item.id === id ? {
+      ...item,
+      nome: dados.nome,
+      categoria: dados.categoria,
+      objetivo: Number(dados.objetivo || 0),
+      valorGuardado: Number(dados.valorGuardado || 0),
+      prazo: dados.prazo,
+      offline: true,
+      syncStatus: 'pending'
+    } : item));
+    await queueOfflineOperation({
+      label: 'Editar projeto offline',
+      resource: 'project-update',
+      path: `/api/finances/project/${id}`,
+      method: 'PUT',
+      body: {
+        name: dados.nome,
+        category: dados.categoria,
+        target_amount: Number(dados.objetivo || 0),
+        saved_amount: Number(dados.valorGuardado || 0),
+        deadline: dados.prazo
+      }
+    });
+    showOfflineSaved('A alteração do projeto será sincronizada quando houver internet.');
+    return true;
+  });
 
-  const eliminarProjeto = (id) => handleBackendOp('eliminar projeto', () => apiFetch(`/api/finances/project/${id}`, { method: 'DELETE' }), 'Projeto eliminado!');
+  const eliminarProjeto = (id) => handleBackendOp('eliminar projeto', () => apiFetch(`/api/finances/project/${id}`, { method: 'DELETE' }), 'Projeto eliminado!', async () => {
+    setProjetos(atuais => atuais.filter(item => item.id !== id));
+    if (String(id).startsWith('offline_')) {
+      await removeLocalPending(id);
+    } else {
+      await queueOfflineOperation({
+        label: 'Eliminar projeto offline',
+        resource: 'project-delete',
+        path: `/api/finances/project/${id}`,
+        method: 'DELETE',
+        body: {}
+      });
+    }
+    showOfflineSaved('A eliminação do projeto será sincronizada quando houver internet.');
+    return true;
+  });
 
   const editarKixikila = (id, dados) => handleBackendOp('editar kixikila', () => apiFetch(`/api/finances/kixikila/${id}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -2242,9 +2507,48 @@ export function FinanceProvider({ children, userId, initialUser }) {
       quota_value: Number(dados.valorQuota),
       hand_value: Number(dados.valorQuota) * 5
     })
-  }), 'Kixikila atualizada!');
+  }), 'Kixikila atualizada!', async () => {
+    setKixikilas(atuais => atuais.map(item => item.id === id ? {
+      ...item,
+      nome: dados.nome,
+      periodicidade: dados.periodicidade,
+      valorQuota: Number(dados.valorQuota || 0),
+      valorMao: Number(dados.valorQuota || 0) * 5,
+      offline: true,
+      syncStatus: 'pending'
+    } : item));
+    await queueOfflineOperation({
+      label: 'Editar kixikila offline',
+      resource: 'kixikila-update',
+      path: `/api/finances/kixikila/${id}`,
+      method: 'PUT',
+      body: {
+        name: dados.nome,
+        periodicity: dados.periodicidade,
+        quota_value: Number(dados.valorQuota || 0),
+        hand_value: Number(dados.valorQuota || 0) * 5
+      }
+    });
+    showOfflineSaved('A alteração da kixikila será sincronizada quando houver internet.');
+    return true;
+  });
 
-  const eliminarKixikila = (id) => handleBackendOp('eliminar kixikila', () => apiFetch(`/api/finances/kixikila/${id}`, { method: 'DELETE' }), 'Kixikila eliminada!');
+  const eliminarKixikila = (id) => handleBackendOp('eliminar kixikila', () => apiFetch(`/api/finances/kixikila/${id}`, { method: 'DELETE' }), 'Kixikila eliminada!', async () => {
+    setKixikilas(atuais => atuais.filter(item => item.id !== id));
+    if (String(id).startsWith('offline_')) {
+      await removeLocalPending(id);
+    } else {
+      await queueOfflineOperation({
+        label: 'Eliminar kixikila offline',
+        resource: 'kixikila-delete',
+        path: `/api/finances/kixikila/${id}`,
+        method: 'DELETE',
+        body: {}
+      });
+    }
+    showOfflineSaved('A eliminação da kixikila será sincronizada quando houver internet.');
+    return true;
+  });
 
   // Mesclar despesas e receitas para o histórico geral ordenado por data
   const movimentos = [...despesas, ...receitas].sort((a, b) => new Date(b.data) - new Date(a.data));
@@ -2255,7 +2559,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
       notificacoes, adicionarNotificacao, marcarNotificacaoLida, marcarTodasLidas,
       assistantUnreadCount, assistantLatestPreview, refreshAssistantSummary,
       alertaGlobal, setAlertaGlobal, mostrarAlerta,
-      isOnline, offlineQueueCount, isSyncingOffline, syncOfflineData: syncOfflineQueue,
+      isOnline, offlineQueueCount, offlineQueueItems, isSyncingOffline, syncOfflineData: syncOfflineQueue,
       editarTransacao, eliminarTransacao,
       editarConta, eliminarConta,
       editarDivida, eliminarDivida,

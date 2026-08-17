@@ -12,12 +12,13 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const { 
     usuario, atualizarUsuario, notificacoes, marcarNotificacaoLida, marcarTodasLidas, isLoadingData,
     movimentos = [], dividas = [], kixikilas = [], projetos = [], assistantUnreadCount = 0,
-    isOnline = true, offlineQueueCount = 0, isSyncingOffline = false, syncOfflineData
+    isOnline = true, offlineQueueCount = 0, offlineQueueItems = [], isSyncingOffline = false, syncOfflineData
   } = useFinance();
   const { systemSettings, pendingPayments = [] } = useAdmin();
   
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showPlanExpiredModal, setShowPlanExpiredModal] = useState(false);
   const [showAnnualRequiredModal, setShowAnnualRequiredModal] = useState(false);
@@ -374,12 +375,8 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
           <button
             type="button"
-            onClick={() => {
-              if (isOnline && offlineQueueCount > 0 && !isSyncingOffline) {
-                syncOfflineData?.();
-              }
-            }}
-            title={offlineQueueCount > 0 ? 'Sincronizar dados offline' : 'Estado da ligacao'}
+            onClick={() => setShowSyncModal(true)}
+            title="Estado da sincronização"
             style={{
               border: '1px solid rgba(16, 185, 129, 0.15)',
               background: `${syncStatusColor}14`,
@@ -388,7 +385,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               padding: '0.55rem 0.85rem',
               fontWeight: 800,
               fontSize: '0.78rem',
-              cursor: isOnline && offlineQueueCount > 0 ? 'pointer' : 'default',
+              cursor: 'pointer',
               whiteSpace: 'nowrap'
             }}
           >
@@ -514,6 +511,80 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           <GlobalAlert />
         </div>
       </main>
+
+      <Modal isOpen={showSyncModal} onClose={() => setShowSyncModal(false)} title="Sincronização Offline">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{
+            padding: '1rem',
+            borderRadius: '18px',
+            background: `${syncStatusColor}14`,
+            color: syncStatusColor,
+            fontWeight: 800,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
+          }}>
+            <span>{syncStatusText}</span>
+            <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+              {offlineQueueCount} pendente(s)
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary btn-pill"
+              disabled={!isOnline || isSyncingOffline || offlineQueueCount === 0}
+              onClick={() => syncOfflineData?.()}
+              style={{ flex: '1 1 180px' }}
+            >
+              {isSyncingOffline ? 'A sincronizar...' : 'Sincronizar agora'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-pill"
+              onClick={() => setShowSyncModal(false)}
+              style={{ flex: '1 1 140px' }}
+            >
+              Fechar
+            </button>
+          </div>
+
+          <div style={{
+            maxHeight: '260px',
+            overflowY: 'auto',
+            border: '1px solid var(--glass-border)',
+            borderRadius: '16px',
+            padding: '0.75rem'
+          }}>
+            {offlineQueueItems.length === 0 ? (
+              <p style={{ margin: 0, color: 'var(--text-secondary)', textAlign: 'center' }}>
+                Não existem alterações pendentes.
+              </p>
+            ) : (
+              offlineQueueItems.map(item => (
+                <div
+                  key={item.id}
+                  style={{
+                    padding: '0.8rem',
+                    borderRadius: '12px',
+                    background: '#f8f9fc',
+                    marginBottom: '0.5rem'
+                  }}
+                >
+                  <strong style={{ color: 'var(--text-primary)', display: 'block' }}>
+                    {item.label || 'Alteração offline'}
+                  </strong>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                    {item.createdAt ? new Date(item.createdAt).toLocaleString('pt-AO') : 'Pendente'}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal de Perfil do Utilizador */}
       <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Editar Perfil">
