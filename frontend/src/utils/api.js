@@ -1,4 +1,7 @@
-export const API_BASE_URL = 'http://localhost:5000';
+const configuredApiUrl = import.meta.env?.VITE_API_URL?.trim();
+
+export const API_BASE_URL = (configuredApiUrl || 'http://localhost:5000').replace(/\/+$/, '');
+export const API_OFFLINE_MESSAGE = 'Não foi possível ligar ao servidor do Yeto. Verifique se o backend está ligado e tente novamente.';
 
 export function getStoredUser() {
   try {
@@ -41,10 +44,16 @@ export async function apiFetch(path, options = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers
-  });
+  let response;
+
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers
+    });
+  } catch (error) {
+    throw new Error(API_OFFLINE_MESSAGE);
+  }
 
   if (response.status === 401) {
     clearSession();

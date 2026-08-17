@@ -123,7 +123,7 @@ function App() {
   if (showDashboard && user) {
     return (
       <AdminProvider isAdmin={isAdmin}>
-        <FinanceProvider userId={user.id}>
+        <FinanceProvider userId={user.id} initialUser={user}>
           <DashboardLayout 
             activeTab={activeTab} 
             setActiveTab={setActiveTab} 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import familyImg from '../assets/login_family.png';
 import Planos from './Planos';
+import { apiFetch, readJsonResponse } from '../utils/api';
 
 export default function LoginScreen({ onLogin }) {
   const [showSobre, setShowSobre] = useState(false);
@@ -34,13 +35,12 @@ export default function LoginScreen({ onLogin }) {
     setSuccessMsg('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
+      const response = await apiFetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Erro ao efetuar login');
 
       if (!response.ok) {
         if (data.needsVerification) {
@@ -65,13 +65,12 @@ export default function LoginScreen({ onLogin }) {
     setErrorMsg('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/register', {
+      const response = await apiFetch('/api/auth/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, occupation })
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Erro ao criar conta');
 
       if (!response.ok) {
         throw new Error(data.error || 'Erro ao criar conta');
@@ -96,13 +95,12 @@ export default function LoginScreen({ onLogin }) {
     setErrorMsg('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/verify-email', {
+      const response = await apiFetch('/api/auth/verify-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode })
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Erro ao verificar conta');
 
       if (!response.ok) {
         throw new Error(data.error || 'Código inválido');
@@ -121,12 +119,11 @@ export default function LoginScreen({ onLogin }) {
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch('http://localhost:5000/api/auth/resend-code', {
+      const response = await apiFetch('/api/auth/resend-code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Erro ao reenviar código');
       if (!response.ok) throw new Error(data.error);
       setSuccessMsg('Novo código enviado com sucesso!');
     } catch (err) {
@@ -142,13 +139,12 @@ export default function LoginScreen({ onLogin }) {
     setErrorMsg('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/forgot-password', {
+      const response = await apiFetch('/api/auth/forgot-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Erro ao pedir recuperação');
 
       if (!response.ok) {
         throw new Error(data.error || 'Erro ao pedir recuperação');
@@ -169,13 +165,12 @@ export default function LoginScreen({ onLogin }) {
     setErrorMsg('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/auth/reset-password', {
+      const response = await apiFetch('/api/auth/reset-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: verificationCode, newPassword: password })
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response, 'Erro ao redefinir senha');
 
       if (!response.ok) {
         throw new Error(data.error || 'Erro ao redefinir senha');

@@ -68,9 +68,31 @@ function getPlanAccess(user) {
   };
 }
 
-export function FinanceProvider({ children, userId }) {
+function buildInitialUsuario(user) {
+  const planAccess = getPlanAccess(user);
+  const nome = user?.name || user?.nome || (user?.email ? user.email.split('@')[0] : 'Utilizador');
+
+  return {
+    nome,
+    email: user?.email || '',
+    profissao: user?.occupation || user?.profissao || '',
+    avatar: nome ? nome.charAt(0).toUpperCase() : 'U',
+    foto: user?.avatar_url || user?.foto || null,
+    plan_type: user?.plan_type || 'free',
+    subscription_plan: planAccess.subscription_plan,
+    created_at: user?.created_at || null,
+    plan_expires_at: planAccess.planExpiresAt,
+    trialDaysLeft: planAccess.trialDaysLeft,
+    isPremium: planAccess.isPremium,
+    planExpired: planAccess.planExpired,
+    isTrialActive: planAccess.isTrialActive,
+    hasAnnualAccess: planAccess.hasAnnualAccess
+  };
+}
+
+export function FinanceProvider({ children, userId, initialUser }) {
   // Estado do Usuário
-  const [usuario, setUsuario] = useState({
+  const [usuario, setUsuario] = useState(() => buildInitialUsuario(initialUser)); /*
     nome: 'Usuário',
     email: '',
     profissao: '',
@@ -84,7 +106,7 @@ export function FinanceProvider({ children, userId }) {
     planExpired: false,
     isTrialActive: false,
     hasAnnualAccess: false
-  });
+  }); */
 
   // Estado das Notificações
   const [notificacoes, setNotificacoes] = useState([
