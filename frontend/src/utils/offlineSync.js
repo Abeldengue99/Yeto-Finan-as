@@ -3,6 +3,8 @@ const DB_VERSION = 1;
 const STORE_NAME = 'offline_store';
 const SNAPSHOT_PREFIX = 'finance-snapshot:';
 const QUEUE_PREFIX = 'sync-queue:';
+const DEVICE_ID_KEY = 'yeto-offline-device-id';
+const SYNC_HISTORY_PREFIX = 'sync-history:';
 
 let dbPromise = null;
 
@@ -113,6 +115,22 @@ export function makeOfflineId(prefix = 'item') {
   return `offline_${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export function getOfflineDeviceId() {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+    if (existing) return existing;
+
+    const cryptoId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : makeOfflineId('device');
+    const deviceId = `device_${cryptoId}`;
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
+    return deviceId;
+  } catch (error) {
+    return makeOfflineId('device');
+  }
+}
+
 export async function saveFinanceSnapshot(userId, snapshot) {
   if (!userId) return false;
   return storageSet(userKey(SNAPSHOT_PREFIX, userId), {
@@ -164,4 +182,27 @@ export async function enqueueOfflineOperation(userId, operation) {
 export async function getOfflineQueueCount(userId) {
   const queue = await getOfflineQueue(userId);
   return queue.length;
+}
+
+export async function getSyncHistory(userId) {
+  if (!userId) return [];
+  const history = await storageGet(userKey(SYNC_HISTORY_PREFIX, userId));
+  return Array.isArray(history) ? history : [];
+}
+
+export async function addSyncHistory(userId, entry) {
+  if (!userId) return [];
+
+  const history = await getSyncHistory(userId);
+  const nextHistory = [
+    {
+      id: makeOfflineId('sync_event'),
+      createdAt: new Date().toISOString(),
+      ...entry
+    },
+    ...history
+  ].slice(0, 30);
+
+  await storageSet(userKey(SYNC_HISTORY_PREFIX, userId), nextHistory);
+  return nextHistory;
 }

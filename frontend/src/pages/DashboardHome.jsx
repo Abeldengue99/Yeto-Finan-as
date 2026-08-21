@@ -438,7 +438,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
           <div className="card-trend warning">Mantenha debaixo de olho</div>
         </div>
         <div className="dash-card">
-          <p className="card-label">Dinheiro na Rua (A Receber)</p>
+          <p className="card-label">Dinheiro a Receber</p>
           <h2 className="card-value positive" style={{ color: '#10b981' }}>Kz {totalAReceber.toLocaleString()}</h2>
           <div className="card-trend positive">Cobre os seus devedores</div>
         </div>

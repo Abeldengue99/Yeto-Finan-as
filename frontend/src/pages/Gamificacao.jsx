@@ -1,257 +1,266 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useFinance } from '../contexts/FinanceContext';
 
 export default function Gamificacao() {
-  const { yetoPoints, nivelAtual, desafiosAtivos, conquistas, completarDesafio, resgatarPremium, usuario, adicionarDesafio } = useFinance();
-  const [isRedeeming, setIsRedeeming] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [novoDesafio, setNovoDesafio] = useState({ titulo: '', descricao: '', recompensa: 100, meta: 1, icone: '🎯' });
+  const {
+    yetoPoints,
+    nivelAtual,
+    nextLevelPoints,
+    desafiosAtivos,
+    conquistas,
+    gamificationRewards,
+    gamificationHistory,
+    isGamificationLoading,
+    carregarGamificacao,
+    completarDesafio,
+    resgatarPremium,
+    usuario
+  } = useFinance();
 
-  const handleAddSubmit = (e) => {
-    e.preventDefault();
-    adicionarDesafio(novoDesafio);
-    setShowAddModal(false);
-    setNovoDesafio({ titulo: '', descricao: '', recompensa: 100, meta: 1, icone: '🎯' });
+  const [claimingId, setClaimingId] = useState(null);
+  const [isRedeeming, setIsRedeeming] = useState(false);
+
+  useEffect(() => {
+    if (usuario?.isPremium) {
+      void carregarGamificacao?.();
+    }
+  }, [usuario?.isPremium]);
+
+  const reward = gamificationRewards?.[0] || {
+    title: '1 mês Premium',
+    description: 'Acesso total ao sistema por 30 dias.',
+    cost: 2000,
+    canRedeem: yetoPoints >= 2000
   };
 
-  // Calcula o progresso para o próximo nível (Fictício para demonstração)
-  const proximoNivelPontos = 2000;
-  const progressoNivel = Math.min((yetoPoints / proximoNivelPontos) * 100, 100);
+  const progressInfo = useMemo(() => {
+    if (!nextLevelPoints) {
+      return { percent: 100, remaining: 0, label: 'Nível máximo alcançado' };
+    }
+
+    const percent = Math.min((Number(yetoPoints || 0) / Number(nextLevelPoints || 1)) * 100, 100);
+    const remaining = Math.max(0, Number(nextLevelPoints || 0) - Number(yetoPoints || 0));
+
+    return {
+      percent,
+      remaining,
+      label: remaining > 0 ? `Faltam ${remaining} pontos para o próximo nível.` : 'Próximo nível desbloqueado.'
+    };
+  }, [nextLevelPoints, yetoPoints]);
+
+  const handleClaim = async (challengeId) => {
+    setClaimingId(challengeId);
+    await completarDesafio(challengeId);
+    setClaimingId(null);
+  };
+
+  const handleRedeem = async () => {
+    setIsRedeeming(true);
+    await resgatarPremium();
+    setIsRedeeming(false);
+  };
 
   if (!usuario?.isPremium) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', textAlign: 'center' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎮</div>
-        <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>Desafios Familiares (Premium)</h2>
-        <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', marginBottom: '2rem' }}>
-          O seu período de teste terminou. A secção de Gamificação, missões em equipa e o programa de recompensas 
-          são exclusivos do Plano Premium. Renove para voltar a jogar e ganhar YetoPoints!
-        </p>
+      <div className="dash-card" style={{ minHeight: '55vh', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+        <div style={{ maxWidth: 560 }}>
+          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎮</div>
+          <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>Desafios Familiares</h2>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+            A gamificação fica disponível durante o mês grátis e nos planos Premium. Complete missões financeiras,
+            ganhe YetoPoints e troque por recompensas dentro da plataforma.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ paddingBottom: '2rem' }}>
-      <div style={{ marginBottom: '2rem' }}>
-        <h1 className="page-title">🎮 Desafios Familiares</h1>
-        <p className="text-secondary">Poupe em equipa, ganhe pontos e desbloqueie recompensas reais!</p>
+      <div className="transactions-page-header" style={{ marginBottom: '2rem' }}>
+        <div>
+          <h1 className="page-title">🎮 Desafios Familiares</h1>
+          <p className="text-secondary">Ganhe pontos por organizar melhor o dinheiro da família.</p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => carregarGamificacao?.()}
+          disabled={isGamificationLoading}
+        >
+          {isGamificationLoading ? 'A atualizar...' : 'Atualizar'}
+        </button>
       </div>
 
-      {/* Hero Section: Nível e Pontos */}
-      <div className="dash-card" style={{ 
-        background: 'linear-gradient(135deg, #373392 0%, #1a1850 100%)', 
-        color: 'white', 
+      <div className="dash-card" style={{
+        background: 'linear-gradient(135deg, #373392 0%, #171544 100%)',
+        color: 'white',
         marginBottom: '2rem',
-        border: '1px solid rgba(255,255,255,0.1)',
-        position: 'relative',
+        border: '1px solid rgba(255,255,255,0.12)',
         overflow: 'hidden'
       }}>
-        {/* Efeito de brilho no fundo */}
-        <div style={{ position: 'absolute', top: '-50%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(255,179,0,0.2) 0%, transparent 70%)', borderRadius: '50%' }}></div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '1.5rem', alignItems: 'center' }}>
           <div>
-            <p style={{ color: 'var(--accent-color)', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-              Nível Atual
+            <p style={{ color: 'var(--accent-color)', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+              Nível atual
             </p>
-            <h2 style={{ fontSize: '2.5rem', margin: '0 0 1rem 0' }}>{nivelAtual} 👑</h2>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', width: '100%', maxWidth: '400px' }}>
-              <div style={{ flex: 1, background: 'rgba(255,255,255,0.2)', height: '10px', borderRadius: '5px', overflow: 'hidden' }}>
-                <div style={{ width: `${progressoNivel}%`, height: '100%', background: 'var(--accent-color)', borderRadius: '5px', transition: 'width 1s ease-in-out' }}></div>
+            <h2 style={{ fontSize: 'clamp(1.8rem, 4vw, 2.8rem)', margin: '0 0 1rem' }}>{nivelAtual}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', maxWidth: 480 }}>
+              <div style={{ flex: 1, background: 'rgba(255,255,255,0.18)', height: 10, borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ width: `${progressInfo.percent}%`, height: '100%', background: 'var(--accent-color)', borderRadius: 999 }} />
               </div>
-              <span style={{ fontSize: '0.9rem', color: '#ccc' }}>{proximoNivelPontos} pts</span>
+              <span style={{ color: '#e4e3ff', fontWeight: 700 }}>{nextLevelPoints || yetoPoints} pts</span>
             </div>
-            <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '0.5rem' }}>Faltam {proximoNivelPontos - yetoPoints} pontos para "Reis do Kwanza"!</p>
+            <p style={{ color: '#d6d5ef', margin: '0.7rem 0 0' }}>{progressInfo.label}</p>
           </div>
 
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '1.2rem', color: '#ccc', marginBottom: '0.2rem' }}>Saldo de Pontos</div>
-            <div style={{ fontSize: '4rem', fontWeight: '900', color: 'var(--accent-color)', lineHeight: '1', filter: 'drop-shadow(0 0 15px rgba(255,179,0,0.4))' }}>
-              {yetoPoints}
+            <div style={{ color: '#d6d5ef', fontWeight: 700 }}>Saldo de Pontos</div>
+            <div style={{ fontSize: 'clamp(2.6rem, 7vw, 4.5rem)', fontWeight: 900, color: 'var(--accent-color)', lineHeight: 1 }}>
+              {Number(yetoPoints || 0).toLocaleString('pt-AO')}
             </div>
-            <div style={{ fontSize: '1rem', color: 'white', marginTop: '0.5rem' }}>YetoPoints ✨</div>
+            <div style={{ color: 'white', marginTop: '0.4rem' }}>YetoPoints</div>
           </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
-        
-        {/* Lado Esquerdo: Missões Ativas */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Missões Ativas</h3>
-            <button onClick={() => setShowAddModal(true)} className="btn btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', borderRadius: '10px' }}>
-              + Criar Desafio
-            </button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(280px, 1fr)', gap: '2rem' }}>
+        <section>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 className="section-title" style={{ margin: 0 }}>Missões disponíveis</h3>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>{desafiosAtivos.length} missão(ões)</span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {desafiosAtivos.length === 0 ? (
-              <div className="dash-card" style={{ textAlign: 'center', padding: '3rem' }}>
-                <span style={{ fontSize: '3rem' }}>🎉</span>
-                <h4 style={{ margin: '1rem 0 0.5rem 0', color: 'var(--text-primary)' }}>Todas as missões concluídas!</h4>
-                <p style={{ color: 'var(--text-secondary)' }}>Novos desafios serão desbloqueados na próxima semana.</p>
-              </div>
-            ) : (
-              desafiosAtivos.map(desafio => {
-                const progresso = (desafio.progresso / desafio.meta) * 100;
-                const isCompleto = progresso >= 100;
-                
-                return (
-                  <div key={desafio.id} className="dash-card" style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                    <div style={{ fontSize: '3rem', background: '#f2f3f9', width: '80px', height: '80px', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {desafio.icone}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                        <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>{desafio.titulo}</h4>
-                        <span style={{ background: 'rgba(255,179,0,0.1)', color: 'var(--accent-color)', padding: '0.2rem 0.6rem', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                          +{desafio.recompensa} pts
-                        </span>
-                      </div>
-                      <p style={{ margin: '0 0 1rem 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{desafio.descricao}</p>
-                      
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{ flex: 1, background: '#eee', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.min(progresso, 100)}%`, height: '100%', background: isCompleto ? 'var(--success-color)' : 'var(--accent-color)', borderRadius: '4px' }}></div>
-                        </div>
-                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 'bold' }}>
-                          {desafio.progresso} / {desafio.meta}
-                        </span>
-                      </div>
-                    </div>
-                    {isCompleto && (
-                      <button 
-                        onClick={() => completarDesafio(desafio.id)}
-                        className="btn btn-primary"
-                        style={{ padding: '0.8rem 1.5rem', borderRadius: '15px', animation: 'pulse 2s infinite' }}
-                      >
-                        Resgatar
-                      </button>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
 
-        {/* Lado Direito: Mural e Recompensas */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          
-          {/* Recompensas / Loja */}
-          <div className="dash-card" style={{ background: 'linear-gradient(135deg, #fff 0%, #fff9eb 100%)', border: '1px solid rgba(255,179,0,0.2)' }}>
-            <h3 className="section-title" style={{ color: '#d97706' }}>🎁 Loja de Recompensas</h3>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-              Troque os seus YetoPoints por vantagens exclusivas.
-            </p>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'white', borderRadius: '15px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}>
-              <div>
-                <h4 style={{ margin: '0 0 0.3rem 0', color: 'var(--text-primary)' }}>1 Mês Premium</h4>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Acesso total ao sistema</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {desafiosAtivos.length === 0 && (
+              <div className="dash-card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+                <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>Sem missões para apresentar</h4>
+                <p style={{ color: 'var(--text-secondary)', marginBottom: 0 }}>
+                  Registe contas, receitas, despesas, orçamentos e listas para desbloquear missões.
+                </p>
               </div>
-              <button 
-                className="btn" 
-                disabled={yetoPoints < 2000 || isRedeeming || usuario?.plan_type === 'premium'}
-                onClick={async () => {
-                  setIsRedeeming(true);
-                  await resgatarPremium();
-                  setIsRedeeming(false);
-                }}
-                style={{ 
-                  background: yetoPoints >= 2000 && usuario?.plan_type !== 'premium' ? 'var(--accent-gradient)' : '#f2f3f9', 
-                  color: yetoPoints >= 2000 && usuario?.plan_type !== 'premium' ? 'white' : '#ccc', 
-                  border: 'none', 
-                  padding: '0.5rem 1rem', 
-                  borderRadius: '10px', 
-                  fontWeight: 'bold', 
-                  cursor: yetoPoints >= 2000 && usuario?.plan_type !== 'premium' ? 'pointer' : 'not-allowed' 
-                }}
+            )}
+
+            {desafiosAtivos.map(desafio => {
+              const progress = Math.min((Number(desafio.progresso || 0) / Math.max(1, Number(desafio.meta || 1))) * 100, 100);
+              const isComplete = Boolean(desafio.completed) || progress >= 100;
+              const isClaimed = Boolean(desafio.claimed);
+              const canClaim = Boolean(desafio.canClaim) && !isClaimed;
+
+              return (
+                <article key={desafio.id} className="dash-card" style={{ display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) auto', gap: '1rem', alignItems: 'center' }}>
+                  <div style={{ fontSize: '2.4rem', background: '#f2f3f9', width: 72, height: 72, borderRadius: 18, display: 'grid', placeItems: 'center' }}>
+                    {desafio.icone || '🎯'}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.4rem' }}>
+                      <h4 style={{ margin: 0, color: 'var(--text-primary)' }}>{desafio.titulo}</h4>
+                      <span style={{ color: 'var(--accent-color)', fontWeight: 900 }}>+{desafio.recompensa} pts</span>
+                    </div>
+                    <p style={{ margin: '0 0 0.9rem', color: 'var(--text-secondary)' }}>{desafio.descricao}</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                      <div style={{ flex: 1, background: '#eef0f7', height: 8, borderRadius: 999, overflow: 'hidden' }}>
+                        <div style={{ width: `${progress}%`, height: '100%', background: isComplete ? 'var(--success-color)' : 'var(--accent-color)', borderRadius: 999 }} />
+                      </div>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        {desafio.progresso} / {desafio.meta}
+                      </span>
+                    </div>
+                  </div>
+
+                  {isClaimed ? (
+                    <span style={{ color: 'var(--success-color)', fontWeight: 900 }}>Resgatado</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={!canClaim || claimingId === desafio.id}
+                      onClick={() => handleClaim(desafio.id)}
+                      style={{ padding: '0.75rem 1.1rem', borderRadius: 14, opacity: canClaim ? 1 : 0.55 }}
+                    >
+                      {claimingId === desafio.id ? '...' : canClaim ? 'Resgatar' : 'Em curso'}
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <aside style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="dash-card" style={{ background: 'linear-gradient(135deg, #fff 0%, #fff8e5 100%)', border: '1px solid rgba(255,179,0,0.25)' }}>
+            <h3 className="section-title" style={{ color: '#d97706' }}>Loja de Recompensas</h3>
+            <p style={{ color: 'var(--text-secondary)' }}>{reward.description}</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: 'white', borderRadius: 16 }}>
+              <div>
+                <strong style={{ display: 'block', color: 'var(--text-primary)' }}>{reward.title}</strong>
+                <span style={{ color: 'var(--text-secondary)' }}>{Number(reward.cost || 2000).toLocaleString('pt-AO')} pts</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isRedeeming || usuario?.plan_type === 'admin' || Number(yetoPoints || 0) < Number(reward.cost || 2000)}
+                onClick={handleRedeem}
               >
-                {isRedeeming ? '...' : (usuario?.plan_type === 'premium' ? 'Já Ativo' : '2.000 pts')}
+                {isRedeeming ? '...' : 'Trocar'}
               </button>
             </div>
-            <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-              <span style={{ fontSize: '0.8rem', color: '#d97706', fontWeight: 'bold' }}>
-                {usuario?.plan_type === 'premium' ? 'Conta já é Premium!' : (yetoPoints < 2000 ? `Faltam ${2000 - yetoPoints} pontos` : 'Pode resgatar!')}
-              </span>
-            </div>
+            <p style={{ color: '#d97706', fontWeight: 800, margin: '1rem 0 0' }}>
+              {Number(yetoPoints || 0) < Number(reward.cost || 2000)
+                ? `Faltam ${Number(reward.cost || 2000) - Number(yetoPoints || 0)} pontos.`
+                : usuario?.plan_type === 'admin'
+                  ? 'Conta administrativa não precisa resgatar.'
+                  : 'Já pode trocar por Premium.'}
+            </p>
           </div>
 
-          {/* Mural de Conquistas */}
           <div className="dash-card">
-            <h3 className="section-title">Mural de Conquistas</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <h3 className="section-title">Conquistas</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
               {conquistas.map(conquista => (
-                <div 
-                  key={conquista.id} 
-                  style={{ 
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-                    padding: '1rem', borderRadius: '15px',
+                <div
+                  key={conquista.id}
+                  style={{
+                    padding: '1rem',
+                    borderRadius: 14,
                     background: conquista.desbloqueada ? '#f8f9fc' : '#fff',
-                    border: conquista.desbloqueada ? '1px solid var(--glass-border)' : '1px dashed #e2e8f0',
-                    opacity: conquista.desbloqueada ? 1 : 0.5,
-                    filter: conquista.desbloqueada ? 'none' : 'grayscale(100%)'
+                    border: conquista.desbloqueada ? '1px solid var(--glass-border)' : '1px dashed #dbe0ef',
+                    opacity: conquista.desbloqueada ? 1 : 0.55
                   }}
                 >
-                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem', filter: conquista.desbloqueada ? 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' : 'none' }}>
-                    {conquista.icone}
-                  </div>
-                  <h5 style={{ margin: '0 0 0.2rem 0', color: 'var(--text-primary)', fontSize: '0.85rem' }}>{conquista.titulo}</h5>
-                  <p style={{ margin: 0, fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: '1.2' }}>{conquista.descricao}</p>
+                  <div style={{ fontSize: '2rem' }}>{conquista.icone}</div>
+                  <strong style={{ display: 'block', color: 'var(--text-primary)', marginTop: '0.5rem' }}>{conquista.titulo}</strong>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0.25rem 0 0' }}>{conquista.descricao}</p>
                 </div>
               ))}
             </div>
           </div>
 
-        </div>
-
-      </div>
-
-      {showAddModal && (
-        <div className="sobre-modal-overlay">
-          <div className="sobre-modal-container" style={{ maxWidth: '400px', padding: '2rem' }}>
-            <button className="sobre-modal-close" onClick={() => setShowAddModal(false)}>×</button>
-            <h2 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>Novo Desafio</h2>
-            <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Título</label>
-                <input type="text" required className="search-bar" value={novoDesafio.titulo} onChange={e => setNovoDesafio({...novoDesafio, titulo: e.target.value})} placeholder="Ex: Fim de Semana sem Fast Food" style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--glass-border)' }} />
+          <div className="dash-card">
+            <h3 className="section-title">Histórico de Pontos</h3>
+            {gamificationHistory.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)' }}>Ainda não existem movimentos de pontos.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                {gamificationHistory.slice(0, 6).map(item => (
+                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', borderBottom: '1px solid #eef0f7', paddingBottom: '0.8rem' }}>
+                    <div>
+                      <strong style={{ color: 'var(--text-primary)' }}>{item.title}</strong>
+                      <p style={{ color: 'var(--text-secondary)', margin: '0.2rem 0 0', fontSize: '0.82rem' }}>
+                        {new Date(item.createdAt).toLocaleDateString('pt-AO')}
+                      </p>
+                    </div>
+                    <span style={{ color: Number(item.points) >= 0 ? 'var(--success-color)' : 'var(--danger-color)', fontWeight: 900 }}>
+                      {Number(item.points) >= 0 ? '+' : ''}{item.points}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Descrição</label>
-                <input type="text" required className="search-bar" value={novoDesafio.descricao} onChange={e => setNovoDesafio({...novoDesafio, descricao: e.target.value})} placeholder="Ex: Não comer fora durante o fim de semana" style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--glass-border)' }} />
-              </div>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Recompensa (Pts)</label>
-                  <input type="number" required min="10" className="search-bar" value={novoDesafio.recompensa} onChange={e => setNovoDesafio({...novoDesafio, recompensa: Number(e.target.value)})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--glass-border)' }} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Meta</label>
-                  <input type="number" required min="1" className="search-bar" value={novoDesafio.meta} onChange={e => setNovoDesafio({...novoDesafio, meta: Number(e.target.value)})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--glass-border)' }} />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>Ícone (Emoji)</label>
-                <input type="text" className="search-bar" value={novoDesafio.icone} onChange={e => setNovoDesafio({...novoDesafio, icone: e.target.value})} style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--glass-border)' }} />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '1rem', borderRadius: '10px', marginTop: '1rem' }}>Adicionar Desafio</button>
-            </form>
+            )}
           </div>
-        </div>
-      )}
-      
-      {/* CSS extra para animação do botão */}
-      <style>{`
-        @keyframes pulse {
-          0% { box-shadow: 0 0 0 0 rgba(255, 179, 0, 0.4); }
-          70% { box-shadow: 0 0 0 10px rgba(255, 179, 0, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(255, 179, 0, 0); }
-        }
-      `}</style>
+        </aside>
+      </div>
     </div>
   );
 }

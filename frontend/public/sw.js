@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'yeto-pwa-v5';
+const CACHE_VERSION = 'yeto-pwa-v6';
 const APP_SHELL = [
   '/',
   '/manifest.webmanifest',
@@ -40,6 +40,16 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
 
   if (request.method !== 'GET' || url.origin !== self.location.origin) {
+    return;
+  }
+
+  if (
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/@vite') ||
+    url.pathname.startsWith('/@react-refresh') ||
+    url.pathname.includes('/node_modules/.vite/')
+  ) {
+    event.respondWith(fetch(request));
     return;
   }
 

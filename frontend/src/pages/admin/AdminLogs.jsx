@@ -20,6 +20,7 @@ export default function AdminLogs() {
         return '✓';
       case 'danger':
       case 'payment_rejected':
+      case 'sync_failed':
       case 'warning':
       case 'payment_pending':
         return '!';
@@ -27,6 +28,8 @@ export default function AdminLogs() {
         return 'U';
       case 'assistant_message':
         return '?';
+      case 'gamification_event':
+        return 'G';
       case 'info':
       default:
         return 'i';
@@ -40,12 +43,14 @@ export default function AdminLogs() {
         return 'var(--success-color)';
       case 'danger':
       case 'payment_rejected':
+      case 'sync_failed':
         return 'var(--danger-color)';
       case 'warning':
       case 'payment_pending':
         return '#fca834';
       case 'user_created':
       case 'assistant_message':
+      case 'gamification_event':
       case 'info':
       default:
         return 'var(--accent-color)';
@@ -73,6 +78,8 @@ export default function AdminLogs() {
             <option value="payment_approved">Pagamentos aprovados</option>
             <option value="payment_rejected">Pagamentos rejeitados</option>
             <option value="assistant_message">Assistente</option>
+            <option value="gamification_event">Gamificação</option>
+            <option value="sync_failed">Erros de sincronização</option>
           </select>
         </div>
       </div>

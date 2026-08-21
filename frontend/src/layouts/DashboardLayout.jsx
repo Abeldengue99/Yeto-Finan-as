@@ -7,6 +7,21 @@ import PlanCountdown from '../components/PlanCountdown';
 
 const PREMIUM_TABS = new Set(['orcamento', 'calendario', 'lista_compras', 'divisas', 'projetos', 'gamificacao', 'kixikila']);
 const ANNUAL_TABS = new Set(['previsao']);
+const FALLBACK_ADMIN_ID = '00000000-0000-0000-0000-000000000000';
+const ADMIN_NAV_ITEMS = [
+  { tab: 'admin_dashboard', permission: 'dashboard', icon: '👑', label: 'Visão Geral' },
+  { tab: 'admin_users', permission: 'users', icon: '👥', label: 'Utilizadores' },
+  { tab: 'admin_payments', permission: 'payments', icon: '💳', label: 'Pagamentos', badge: 'payments' },
+  { tab: 'assistente', permission: 'assistant', icon: '?', label: 'Assistente', badge: 'assistant' },
+  { tab: 'admin_settings', permission: 'settings', icon: '⚙️', label: 'Definições' },
+  { tab: 'admin_gamification', permission: 'reports', icon: '🎮', label: 'Gamificação' },
+  { tab: 'admin_logs', permission: 'reports', icon: '📜', label: 'Logs' }
+];
+
+function getAdminPermissions(usuario) {
+  if (usuario?.id === FALLBACK_ADMIN_ID) return { all: true };
+  return usuario?.adminPermissions || usuario?.admin_permissions || {};
+}
 
 export default function DashboardLayout({ children, activeTab, setActiveTab, onLogout, isAdmin }) {
   const { 
@@ -26,6 +41,12 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   const unreadCount = notificacoes.filter(n => !n.lida).length;
   const assistantBadge = assistantUnreadCount > 99 ? '99+' : assistantUnreadCount;
   const pendingPaymentsBadge = pendingPayments.length > 99 ? '99+' : pendingPayments.length;
+  const adminPermissions = getAdminPermissions(usuario);
+  const hasFullAdminAccess = isAdmin && Boolean(adminPermissions.all || adminPermissions.all_access || usuario?.id === FALLBACK_ADMIN_ID);
+  const hasAdminPermission = (permission) => isAdmin && Boolean(hasFullAdminAccess || adminPermissions[permission]);
+  const visibleAdminNavItems = ADMIN_NAV_ITEMS.filter(item => hasAdminPermission(item.permission));
+  const isDelegatedAdmin = isAdmin && !hasFullAdminAccess;
+  const firstAllowedAdminTab = visibleAdminNavItems[0]?.tab || 'dashboard';
 
   // Sistema de Pesquisa Global
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,6 +114,18 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
     setActiveTab(tab);
   };
 
+  const navigateToAdminTab = (tab) => {
+    const item = ADMIN_NAV_ITEMS.find(navItem => navItem.tab === tab);
+    if (!item || !hasAdminPermission(item.permission)) {
+      setShowMobileMenu(false);
+      setActiveTab(firstAllowedAdminTab);
+      return;
+    }
+
+    setShowMobileMenu(false);
+    setActiveTab(tab);
+  };
+
   const goToPlans = () => {
     setShowPlanExpiredModal(false);
     setShowAnnualRequiredModal(false);
@@ -110,6 +143,12 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
   };
 
   useEffect(() => {
+    const adminItem = ADMIN_NAV_ITEMS.find(item => item.tab === activeTab);
+    if (isAdmin && adminItem && !hasAdminPermission(adminItem.permission)) {
+      setActiveTab(firstAllowedAdminTab);
+      return;
+    }
+
     if (ANNUAL_TABS.has(activeTab) && !hasAnnualAccess) {
       setActiveTab('dashboard');
       setShowAnnualRequiredModal(true);
@@ -120,7 +159,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
       setActiveTab('dashboard');
       setShowPlanExpiredModal(true);
     }
-  }, [activeTab, hasAnnualAccess, hasPremiumAccess, setActiveTab]);
+  }, [activeTab, firstAllowedAdminTab, hasAnnualAccess, hasPremiumAccess, isAdmin, setActiveTab]);
 
   if (systemSettings?.maintenanceMode && !isAdmin) {
     return (
@@ -139,15 +178,33 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
+    const formData = new FormData(e.currentTarget);
     const dados = {
-      nome: e.target[0].value,
+      nome: formData.get('nome') || '',
       // e.target[1] é o email, está disabled
-      profissao: e.target[2].value,
-      novaSenha: e.target[3].value
+      profissao: formData.get('profissao') || '',
+      genero: formData.get('genero') || '',
+      provincia: formData.get('provincia') || '',
+      municipio: formData.get('municipio') || '',
+      cidade: formData.get('cidade') || '',
+      novaSenha: formData.get('novaSenha') || ''
     };
     const saved = await atualizarUsuario(dados);
     if (!saved) return;
     setShowProfileModal(false);
+  };
+
+  const formatProfileDate = (value) => {
+    if (!value) return 'Ainda não registado';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Ainda não registado';
+    return date.toLocaleString('pt-AO', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const handleImageUpload = async (e) => {
@@ -256,31 +313,23 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             <span>🤝</span> Kixikila
           </button>
 
-          {isAdmin && (
+          {isAdmin && visibleAdminNavItems.length > 0 && (
             <>
               <div className="hide-on-mobile" style={{ marginTop: '2rem', padding: '0 1rem', fontSize: '0.75rem', fontWeight: 'bold', color: '#8a8ca3', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Área Administrativa
               </div>
-              <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('admin_dashboard')} style={{ marginTop: '0.5rem' }}>
-                <span>👑</span> Visão Geral
-              </button>
-              <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_users' ? 'active' : ''}`} onClick={() => setActiveTab('admin_users')}>
-                <span>👥</span> Utilizadores
-              </button>
-              <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => setActiveTab('admin_payments')}>
-                <span>💳</span> Pagamentos
-                {pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}
-              </button>
-              <button className={`sidebar-link hide-on-mobile ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => setActiveTab('assistente')}>
-                <span>?</span> Assistente
-                {assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}
-              </button>
-              <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => setActiveTab('admin_settings')}>
-                <span>⚙️</span> Definições
-              </button>
-              <button className={`sidebar-link hide-on-mobile ${activeTab === 'admin_logs' ? 'active' : ''}`} onClick={() => setActiveTab('admin_logs')}>
-                <span>📜</span> Logs
-              </button>
+              {visibleAdminNavItems.map((item, index) => (
+                <button
+                  key={item.tab}
+                  className={`sidebar-link hide-on-mobile ${activeTab === item.tab ? 'active' : ''}`}
+                  onClick={() => navigateToAdminTab(item.tab)}
+                  style={index === 0 ? { marginTop: '0.5rem' } : undefined}
+                >
+                  <span>{item.icon}</span> {item.label}
+                  {item.badge === 'payments' && pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}
+                  {item.badge === 'assistant' && assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}
+                </button>
+              ))}
             </>
           )}
 
@@ -289,7 +338,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             <span>☰</span> Menu
           </button>
         </nav>
-        <div className="sidebar-footer hide-on-mobile">
+        {!isAdmin && <div className="sidebar-footer hide-on-mobile">
           <button 
             className={`sidebar-link ${activeTab === 'planos' ? 'active' : ''}`} 
             onClick={goToPlans}
@@ -302,7 +351,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           >
             <span>💎</span> Fazer Upgrade
           </button>
-        </div>
+        </div>}
       </aside>
 
       {/* Main Content */}
@@ -375,6 +424,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
 
           <button
             type="button"
+            className="dashboard-sync-status"
             onClick={() => setShowSyncModal(true)}
             title="Estado da sincronização"
             style={{
@@ -389,7 +439,8 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               whiteSpace: 'nowrap'
             }}
           >
-            {syncStatusText}
+            <span className="sync-status-dot" aria-hidden="true"></span>
+            <span className="sync-status-label">{syncStatusText}</span>
           </button>
           
           <div className="user-actions" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
@@ -587,7 +638,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
       </Modal>
 
       {/* Modal de Perfil do Utilizador */}
-      <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Editar Perfil">
+      <Modal isOpen={showProfileModal} onClose={() => setShowProfileModal(false)} title="Editar Perfil" maxWidth="680px" className="profile-modal">
         <div style={{ textAlign: 'center', marginBottom: '0.35rem', position: 'relative' }}>
           <input 
             type="file" 
@@ -629,24 +680,69 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
           onRenew={goToPlans}
         />
         
-        <form onSubmit={handleProfileSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+        <form onSubmit={handleProfileSave} className="profile-edit-form">
           <div>
             <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>Nome (Como quer ser chamado)</label>
-            <input type="text" className="qt-input" defaultValue={usuario.nome} required style={{ padding: '0.42rem 0.75rem' }} />
+            <input name="nome" type="text" className="qt-input" defaultValue={usuario.nome} required />
           </div>
           <div>
             <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>E-mail Pessoal</label>
-            <input type="email" className="qt-input" value={usuario.email || ''} disabled style={{ padding: '0.42rem 0.75rem', background: '#f2f3f9', cursor: 'not-allowed', color: '#8a8ca3' }} />
+            <input type="email" className="qt-input profile-readonly-input" value={usuario.email || ''} disabled />
           </div>
           <div>
             <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>Profissão / Ocupação</label>
-            <input type="text" className="qt-input" defaultValue={usuario.profissao} placeholder="Ex: Engenheiro, Professor..." style={{ padding: '0.42rem 0.75rem' }} />
+            <input name="profissao" type="text" className="qt-input" defaultValue={usuario.profissao} placeholder="Ex: Engenheiro, Professor..." />
+          </div>
+          <div className="profile-form-grid">
+            <div className="profile-field">
+              <label>Género</label>
+              <select name="genero" className="qt-input profile-select" defaultValue={usuario.genero || ''}>
+                <option value="">Prefiro não informar</option>
+                <option value="feminino">Feminino</option>
+                <option value="masculino">Masculino</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div className="profile-field">
+              <label>Província</label>
+              <input name="provincia" type="text" className="qt-input" defaultValue={usuario.provincia || ''} placeholder="Ex: Luanda" />
+            </div>
+            <div className="profile-field">
+              <label>Município</label>
+              <input name="municipio" type="text" className="qt-input" defaultValue={usuario.municipio || ''} placeholder="Ex: Belas" />
+            </div>
+            <div className="profile-field">
+              <label>Cidade / Bairro</label>
+              <input name="cidade" type="text" className="qt-input" defaultValue={usuario.cidade || ''} placeholder="Opcional" />
+            </div>
+          </div>
+          <div className="profile-readonly-grid">
+            <div className="profile-readonly-card">
+              <span>Email verificado</span>
+              <strong>{usuario.emailVerificado ? 'Sim' : 'Não'}</strong>
+            </div>
+            <div className="profile-readonly-card">
+              <span>Último acesso</span>
+              <strong>{formatProfileDate(usuario.ultimoLogin)}</strong>
+            </div>
+            <div className="profile-readonly-card">
+              <span>Dispositivo</span>
+              <strong>{usuario.ultimoDispositivo || 'Ainda não registado'}</strong>
+            </div>
+            <div className="profile-readonly-card">
+              <span>IP recente</span>
+              <strong>{usuario.ultimoIp || 'Não disponível'}</strong>
+            </div>
+            <div className="profile-readonly-card">
+              <span>Dispositivos usados</span>
+              <strong>{usuario.totalDispositivos || 0}</strong>
+            </div>
           </div>
           <div>
             <label className="text-secondary" style={{ display: 'block', marginBottom: '0.15rem', fontSize: '0.8rem' }}>Nova Senha (Opcional)</label>
-            <input type="password" className="qt-input" placeholder="Deixe em branco para manter" style={{ padding: '0.42rem 0.75rem' }} />
+            <input name="novaSenha" type="password" className="qt-input" placeholder="Deixe em branco para manter" />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginTop: '0.35rem' }}>
+          <div className="profile-actions">
             <button type="submit" className="btn btn-primary btn-pill" style={{ padding: '0.52rem' }}>Guardar Alterações</button>
             <button type="button" onClick={onLogout} className="btn btn-glass btn-pill" style={{ padding: '0.52rem', color: 'var(--danger-color)', border: '1px solid rgba(255,0,0,0.2)' }}>
               🚪 Terminar Sessão
@@ -712,7 +808,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
       {/* Mobile Menu Overlay */}
       {showMobileMenu && (
         <div className="mobile-menu-overlay" onClick={() => setShowMobileMenu(false)}>
-          <div className="mobile-menu-content" onClick={e => e.stopPropagation()}>
+          <div className={`mobile-menu-content ${isDelegatedAdmin ? 'delegated-admin-menu' : ''}`} onClick={e => e.stopPropagation()}>
             <div className="mobile-menu-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <div style={{
@@ -731,15 +827,35 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
             </div>
             
             <div className="mobile-menu-links">
-              {isAdmin && (
+              {isAdmin && visibleAdminNavItems.length > 0 && (
                 <>
                   <div className="mobile-menu-section-title" style={{ marginTop: '0.5rem' }}>Administração</div>
-                  <button className={`mobile-menu-link ${activeTab === 'admin_dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_dashboard'); setShowMobileMenu(false); }}><span>👑</span> Visão Geral</button>
-                  <button className={`mobile-menu-link ${activeTab === 'admin_users' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_users'); setShowMobileMenu(false); }}><span>👥</span> Utilizadores</button>
-                  <button className={`mobile-menu-link ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_payments'); setShowMobileMenu(false); }}><span>💳</span> Pagamentos{pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}</button>
-                  <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente{assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}</button>
-                  <button className={`mobile-menu-link ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_settings'); setShowMobileMenu(false); }}><span>⚙️</span> Configurações Globais</button>
-                  <button className={`mobile-menu-link ${activeTab === 'admin_logs' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_logs'); setShowMobileMenu(false); }}><span>📜</span> Histórico & Logs</button>
+                  {isDelegatedAdmin && (
+                    <div className="delegated-admin-mobile-list">
+                      {visibleAdminNavItems.map(item => (
+                        <button
+                          key={item.tab}
+                          className={`mobile-menu-link admin-allowed ${activeTab === item.tab ? 'active' : ''}`}
+                          onClick={() => navigateToAdminTab(item.tab)}
+                        >
+                          <span>{item.icon}</span> {item.tab === 'admin_settings' ? 'Configurações Globais' : item.tab === 'admin_logs' ? 'Histórico & Logs' : item.label}
+                          {item.badge === 'payments' && pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}
+                          {item.badge === 'assistant' && assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!isDelegatedAdmin && (
+                    <>
+                      <button className={`mobile-menu-link ${activeTab === 'admin_dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_dashboard'); setShowMobileMenu(false); }}><span>👑</span> Visão Geral</button>
+                      <button className={`mobile-menu-link ${activeTab === 'admin_users' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_users'); setShowMobileMenu(false); }}><span>👥</span> Utilizadores</button>
+                      <button className={`mobile-menu-link ${activeTab === 'admin_payments' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_payments'); setShowMobileMenu(false); }}><span>💳</span> Pagamentos{pendingPayments.length > 0 && <span className="menu-badge">{pendingPaymentsBadge}</span>}</button>
+                      <button className={`mobile-menu-link ${activeTab === 'assistente' ? 'active' : ''}`} onClick={() => { setActiveTab('assistente'); setShowMobileMenu(false); }}><span>?</span> Assistente{assistantUnreadCount > 0 && <span className="menu-badge">{assistantBadge}</span>}</button>
+                      <button className={`mobile-menu-link ${activeTab === 'admin_settings' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_settings'); setShowMobileMenu(false); }}><span>⚙️</span> Configurações Globais</button>
+                      <button className={`mobile-menu-link ${activeTab === 'admin_gamification' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_gamification'); setShowMobileMenu(false); }}><span>🎮</span> Gamificação</button>
+                      <button className={`mobile-menu-link ${activeTab === 'admin_logs' ? 'active' : ''}`} onClick={() => { setActiveTab('admin_logs'); setShowMobileMenu(false); }}><span>📜</span> Histórico & Logs</button>
+                    </>
+                  )}
                 </>
               )}
 
@@ -762,7 +878,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               <button className={`mobile-menu-link ${activeTab === 'kixikila' ? 'active' : ''}`} onClick={() => navigateToTab('kixikila')}><span>🤝</span> Kixikila</button>
             </div>
             
-            <div style={{ marginTop: '1.5rem' }}>
+            {!isAdmin && <div style={{ marginTop: '1.5rem' }}>
               <button 
                 className={`mobile-menu-link ${activeTab === 'planos' ? 'active' : ''}`} 
                 onClick={goToPlans}
@@ -773,7 +889,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               >
                 <span>⭐</span> Fazer Upgrade
               </button>
-            </div>
+            </div>}
           </div>
         </div>
       )}

@@ -11,7 +11,11 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "check:routes": "node check_feature_routes.js",
     "migrate:shopping": "node migrate_shopping_lists.js",
-    "migrate:logs": "node migrate_admin_logs.js"
+    "migrate:logs": "node migrate_admin_logs.js",
+    "migrate:sync": "node migrate_sync_metadata.js",
+    "migrate:marketing": "node migrate_user_marketing_metadata.js",
+    "migrate:admin-permissions": "node migrate_admin_permissions.js",
+    "migrate:payment-review": "node migrate_payment_review_fields.js"
   },
   "keywords": [],
   "author": "",

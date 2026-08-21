@@ -1,7 +1,22 @@
 const configuredApiUrl = import.meta.env?.VITE_API_URL?.trim();
 
-export const API_BASE_URL = (configuredApiUrl || 'http://localhost:5000').replace(/\/+$/, '');
-export const API_OFFLINE_MESSAGE = 'Não foi possível ligar ao servidor do Yeto. Verifique se o backend está ligado e tente novamente.';
+function getDefaultApiUrl() {
+  if (typeof window === 'undefined') return 'http://localhost:5000';
+
+  const { protocol, hostname } = window.location;
+  const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+
+  if (localHosts.has(hostname)) {
+    return 'http://localhost:5000';
+  }
+
+  return `${protocol === 'https:' ? 'https:' : 'http:'}//${hostname}:5000`;
+}
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+export const API_BASE_URL = (configuredApiUrl || getDefaultApiUrl()).replace(/\/+$/, '');
+export const API_OFFLINE_MESSAGE = 'Servidor temporariamente indisponível. Tente novamente em alguns segundos.';
 
 export function getStoredUser() {
   try {
@@ -46,13 +61,20 @@ export async function apiFetch(path, options = {}) {
 
   let response;
 
-  try {
-    response = await fetch(url, {
-      ...options,
-      headers
-    });
-  } catch (error) {
-    throw new Error(API_OFFLINE_MESSAGE);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers
+      });
+      break;
+    } catch (error) {
+      if (attempt === 2) {
+        throw new Error(API_OFFLINE_MESSAGE);
+      }
+
+      await wait(350 * (attempt + 1));
+    }
   }
 
   if (response.status === 401) {

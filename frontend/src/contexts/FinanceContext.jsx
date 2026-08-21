@@ -1,8 +1,10 @@
 import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
-import { apiFetch } from '../utils/api';
+import { apiFetch, getStoredUser, readJsonResponse, saveSession } from '../utils/api';
 import {
+  addSyncHistory,
   enqueueOfflineOperation,
   getBrowserOnlineStatus,
+  getOfflineDeviceId,
   getOfflineQueue,
   getOfflineQueueCount,
   isOfflineError,
@@ -85,9 +87,19 @@ function buildInitialUsuario(user) {
   const nome = user?.name || user?.nome || (user?.email ? user.email.split('@')[0] : 'Utilizador');
 
   return {
+    id: user?.id || '',
     nome,
     email: user?.email || '',
+    emailVerificado: Boolean(user?.email_verified ?? user?.emailVerificado),
     profissao: user?.occupation || user?.profissao || '',
+    genero: user?.gender || user?.genero || '',
+    provincia: user?.province || user?.provincia || '',
+    municipio: user?.municipality || user?.municipio || '',
+    cidade: user?.city || user?.cidade || '',
+    ultimoLogin: user?.last_login_at || user?.ultimoLogin || '',
+    ultimoIp: user?.last_login_ip || user?.ultimoIp || '',
+    ultimoDispositivo: user?.last_login_device || user?.ultimoDispositivo || '',
+    totalDispositivos: Number(user?.device_count || user?.totalDispositivos || 0),
     avatar: nome ? nome.charAt(0).toUpperCase() : 'U',
     foto: user?.avatar_url || user?.foto || null,
     plan_type: user?.plan_type || 'free',
@@ -99,6 +111,8 @@ function buildInitialUsuario(user) {
     planExpired: planAccess.planExpired,
     isTrialActive: planAccess.isTrialActive,
     hasAnnualAccess: planAccess.hasAnnualAccess
+    ,
+    adminPermissions: user?.admin_permissions || user?.adminPermissions || {}
   };
 }
 
@@ -227,7 +241,7 @@ function buildShoppingSummary(lists, monthKey, budgets, expenses) {
   };
 }
 
-export function FinanceProvider({ children, userId, initialUser }) {
+export function FinanceProvider({ children, userId, initialUser, onUserHydrated }) {
   // Estado do Usuário
   const [usuario, setUsuario] = useState(() => buildInitialUsuario(initialUser)); /*
     nome: 'Usuário',
@@ -294,6 +308,7 @@ export function FinanceProvider({ children, userId, initialUser }) {
 
       // Hydrate user info from DB
       if (data.user) {
+        onUserHydrated?.(data.user);
         const planAccess = getPlanAccess(data.user);
         const { isPremium, trialDaysLeft, planExpired, isTrialActive, hasAnnualAccess } = planAccess;
 
@@ -338,9 +353,19 @@ export function FinanceProvider({ children, userId, initialUser }) {
 
         setUsuario(prev => ({
           ...prev,
+          id: data.user.id || prev.id,
           nome: data.user.name,
           email: data.user.email,
+          emailVerificado: Boolean(data.user.email_verified),
           profissao: data.user.occupation || '',
+          genero: data.user.gender || '',
+          provincia: data.user.province || '',
+          municipio: data.user.municipality || '',
+          cidade: data.user.city || '',
+          ultimoLogin: data.user.last_login_at || '',
+          ultimoIp: data.user.last_login_ip || '',
+          ultimoDispositivo: data.user.last_login_device || '',
+          totalDispositivos: Number(data.user.device_count || 0),
           foto: data.user.avatar_url || null,
           avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
           plan_type: data.user.plan_type,
@@ -351,7 +376,8 @@ export function FinanceProvider({ children, userId, initialUser }) {
           isPremium,
           planExpired,
           isTrialActive,
-          hasAnnualAccess
+          hasAnnualAccess,
+          adminPermissions: data.user.admin_permissions || {}
         }));
         if (data.user.yeto_points !== undefined) {
           setYetoPoints(data.user.yeto_points);
@@ -397,9 +423,19 @@ export function FinanceProvider({ children, userId, initialUser }) {
           const planAccess = getPlanAccess(cached.user);
           setUsuario(prev => ({
             ...prev,
+            id: cached.user.id || prev.id,
             nome: cached.user.name || prev.nome,
             email: cached.user.email || prev.email,
+            emailVerificado: Boolean(cached.user.email_verified ?? prev.emailVerificado),
             profissao: cached.user.occupation || prev.profissao,
+            genero: cached.user.gender || prev.genero,
+            provincia: cached.user.province || prev.provincia,
+            municipio: cached.user.municipality || prev.municipio,
+            cidade: cached.user.city || prev.cidade,
+            ultimoLogin: cached.user.last_login_at || prev.ultimoLogin,
+            ultimoIp: cached.user.last_login_ip || prev.ultimoIp,
+            ultimoDispositivo: cached.user.last_login_device || prev.ultimoDispositivo,
+            totalDispositivos: Number(cached.user.device_count || prev.totalDispositivos || 0),
             foto: cached.user.avatar_url || prev.foto,
             avatar: cached.user.name ? cached.user.name.charAt(0).toUpperCase() : prev.avatar,
             plan_type: cached.user.plan_type || prev.plan_type,
@@ -410,7 +446,8 @@ export function FinanceProvider({ children, userId, initialUser }) {
             isPremium: planAccess.isPremium,
             planExpired: planAccess.planExpired,
             isTrialActive: planAccess.isTrialActive,
-            hasAnnualAccess: planAccess.hasAnnualAccess
+            hasAnnualAccess: planAccess.hasAnnualAccess,
+            adminPermissions: cached.user.admin_permissions || prev.adminPermissions || {}
           }));
         }
 
@@ -446,42 +483,94 @@ export function FinanceProvider({ children, userId, initialUser }) {
     offlineSyncingRef.current = true;
     setIsSyncingOffline(true);
 
-    const remaining = [];
-    const idMap = {};
+    let remaining = queue;
     let syncedCount = 0;
 
-    for (let index = 0; index < queue.length; index += 1) {
-      const operation = queue[index];
-      const resolvedOperation = resolveQueuedOperation(operation, idMap);
+    const syncIndividually = async (queueToSync) => {
+      const nextRemaining = [];
+      const idMap = {};
+      let count = 0;
 
-      try {
-        const response = await apiFetch(resolvedOperation.path, {
-          method: resolvedOperation.method || 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(resolvedOperation.body || {})
-        });
-        const data = await response.json().catch(() => ({}));
+      for (let index = 0; index < queueToSync.length; index += 1) {
+        const operation = queueToSync[index];
+        const resolvedOperation = resolveQueuedOperation(operation, idMap);
 
-        if (!response.ok) {
-          remaining.push(
+        try {
+          const response = await apiFetch(resolvedOperation.path, {
+            method: resolvedOperation.method || 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(resolvedOperation.body || {})
+          });
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            nextRemaining.push(
+              resolvedOperation,
+              ...queueToSync.slice(index + 1).map(item => resolveQueuedOperation(item, idMap))
+            );
+            break;
+          }
+
+          if (operation.localId && data?.id) {
+            idMap[operation.localId] = data.id;
+          }
+
+          count += 1;
+        } catch (error) {
+          nextRemaining.push(
             resolvedOperation,
-            ...queue.slice(index + 1).map(item => resolveQueuedOperation(item, idMap))
+            ...queueToSync.slice(index + 1).map(item => resolveQueuedOperation(item, idMap))
           );
           break;
         }
-
-        if (operation.localId && data?.id) {
-          idMap[operation.localId] = data.id;
-        }
-
-        syncedCount += 1;
-      } catch (error) {
-        remaining.push(
-          resolvedOperation,
-          ...queue.slice(index + 1).map(item => resolveQueuedOperation(item, idMap))
-        );
-        break;
       }
+
+      return { remaining: nextRemaining, syncedCount: count };
+    };
+
+    try {
+      const response = await apiFetch('/api/sync/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId: getOfflineDeviceId(),
+          changes: queue
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.status === 404 || response.status === 405) {
+        const fallback = await syncIndividually(queue);
+        remaining = fallback.remaining;
+        syncedCount = fallback.syncedCount;
+      } else if (response.ok) {
+        syncedCount = Number(data.syncedCount || 0);
+        const idMap = data.idMap || {};
+        remaining = Number.isInteger(data.failedAt)
+          ? queue.slice(data.failedAt).map(item => resolveQueuedOperation(item, idMap))
+          : [];
+
+        await addSyncHistory(userId, {
+          status: data.ok ? 'synced' : 'partial',
+          syncedCount,
+          pendingCount: remaining.length,
+          error: data.error?.message || null
+        });
+      } else {
+        await addSyncHistory(userId, {
+          status: 'failed',
+          syncedCount: 0,
+          pendingCount: queue.length,
+          error: data.error || 'Falha ao sincronizar alterações offline.'
+        });
+      }
+    } catch (error) {
+      await addSyncHistory(userId, {
+        status: 'failed',
+        syncedCount: 0,
+        pendingCount: queue.length,
+        error: error.message || 'Falha de ligação durante a sincronização.'
+      });
     }
 
     await replaceOfflineQueue(userId, remaining);
@@ -561,14 +650,25 @@ export function FinanceProvider({ children, userId, initialUser }) {
       orcamentos,
       receitas,
       user: {
+        id: usuario.id,
         name: usuario.nome,
         email: usuario.email,
+        email_verified: usuario.emailVerificado,
         occupation: usuario.profissao,
+        gender: usuario.genero,
+        province: usuario.provincia,
+        municipality: usuario.municipio,
+        city: usuario.cidade,
+        last_login_at: usuario.ultimoLogin,
+        last_login_ip: usuario.ultimoIp,
+        last_login_device: usuario.ultimoDispositivo,
+        device_count: usuario.totalDispositivos,
         avatar_url: usuario.foto,
         plan_type: usuario.plan_type,
         subscription_plan: usuario.subscription_plan,
         created_at: usuario.created_at,
-        plan_expires_at: usuario.plan_expires_at
+        plan_expires_at: usuario.plan_expires_at,
+        admin_permissions: usuario.adminPermissions || {}
       }
     }).catch(error => {
       console.warn('Nao foi possivel guardar o retrato offline.', error);
@@ -633,42 +733,109 @@ export function FinanceProvider({ children, userId, initialUser }) {
   }, []);
 
   // Estado de Gamificação (Desafios do Casal)
-  const [yetoPoints, setYetoPoints] = useState(1250);
-  const [nivelAtual, setNivelAtual] = useState('Mestres da Poupança');
+  const [yetoPoints, setYetoPoints] = useState(Number(initialUser?.yeto_points || 0));
+  const [nivelAtual, setNivelAtual] = useState('Primeiros Passos');
+  const [nextLevelPoints, setNextLevelPoints] = useState(500);
+  const [gamificationRewards, setGamificationRewards] = useState([]);
+  const [gamificationHistory, setGamificationHistory] = useState([]);
+  const [isGamificationLoading, setIsGamificationLoading] = useState(false);
 
-  const [desafiosAtivos, setDesafiosAtivos] = useState([
-    { id: 1, titulo: 'Semana Caseira', descricao: 'Não gastar em Fast Food durante 7 dias.', recompensa: 100, progresso: 4, meta: 7, icone: '🍔' },
-    { id: 2, titulo: 'Reforço de Segurança', descricao: 'Guardar 10.000 Kz no Cofre de Desrascanço.', recompensa: 250, progresso: 5000, meta: 10000, icone: '🛡️' },
-    { id: 3, titulo: 'Contas em Dia', descricao: 'Pagar todos os Pagamentos Fixos até ao dia 10.', recompensa: 150, progresso: 1, meta: 2, icone: '📅' }
-  ]);
+  const [desafiosAtivos, setDesafiosAtivos] = useState([]);
+  const [conquistas, setConquistas] = useState([]);
 
-  const [conquistas, setConquistas] = useState([
-    { id: 101, titulo: 'Primeiro Passo', descricao: 'Criou a primeira conta no Yeto.', desbloqueada: true, icone: '🌱' },
-    { id: 102, titulo: 'Reis da Kixikila', descricao: 'Completou um ciclo de Kixikila sem falhas.', desbloqueada: true, icone: '🤝' },
-    { id: 103, titulo: 'Zero Dívidas', descricao: 'Terminou o mês sem nenhuma dívida a pagar.', desbloqueada: false, icone: '🏆' },
-    { id: 104, titulo: 'Investidor Nato', descricao: 'Comprou divisas pela primeira vez.', desbloqueada: false, icone: '🌍' }
-  ]);
+  const applyGamificationSummary = (summary) => {
+    if (!summary) return;
 
-  const completarDesafio = (id) => {
-    const desafio = desafiosAtivos.find(d => d.id === id);
-    if (!desafio) return;
-
-    setYetoPoints(prev => prev + desafio.recompensa);
-    mostrarAlerta('Desafio Concluído! 🎉', `Parabéns! Ganhou ${desafio.recompensa} YetoPoints por concluir: ${desafio.titulo}.`, 'sucesso');
-
-    // Remove o desafio concluído
-    setDesafiosAtivos(prev => prev.filter(d => d.id !== id));
+    setYetoPoints(Number(summary.yetoPoints || 0));
+    setNivelAtual(summary.nivelAtual || 'Primeiros Passos');
+    setNextLevelPoints(summary.nextLevelPoints || null);
+    setDesafiosAtivos(summary.challenges || []);
+    setConquistas(summary.achievements || []);
+    setGamificationRewards(summary.rewards || []);
+    setGamificationHistory(summary.history || []);
   };
 
-  const adicionarDesafio = (novoDesafio) => {
-    const desafio = {
-      ...novoDesafio,
-      id: Date.now(),
-      progresso: 0
-    };
-    setDesafiosAtivos(prev => [...prev, desafio]);
-    mostrarAlerta('Desafio Criado!', 'O seu novo desafio familiar foi adicionado com sucesso.', 'sucesso');
+  const carregarGamificacao = async ({ silent = false } = {}) => {
+    if (!userId) return null;
+
+    if (!silent) setIsGamificationLoading(true);
+
+    try {
+      const response = await apiFetch(`/api/gamification/${userId}`);
+      const data = await readJsonResponse(response, 'Erro ao carregar gamificação.');
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao carregar gamificação.');
+      }
+
+      applyGamificationSummary(data);
+      return data;
+    } catch (error) {
+      if (!silent) {
+        mostrarAlerta('Gamificação', error.message || 'Não foi possível carregar os desafios.', 'erro');
+      }
+      return null;
+    } finally {
+      if (!silent) setIsGamificationLoading(false);
+    }
   };
+
+  const completarDesafio = async (id) => {
+    const desafio = desafiosAtivos.find(item => String(item.id) === String(id));
+    if (!desafio || desafio.claimed || !desafio.completed) return false;
+
+    try {
+      const response = await apiFetch('/api/gamification/claim', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          challengeKey: desafio.key,
+          sourceId: desafio.sourceId || null
+        })
+      });
+      const data = await readJsonResponse(response, 'Erro ao resgatar missão.');
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao resgatar missão.');
+      }
+
+      applyGamificationSummary(data.summary);
+      mostrarAlerta('Missão concluída!', data.message || `Ganhou ${desafio.recompensa} YetoPoints.`, 'sucesso');
+      return true;
+    } catch (error) {
+      mostrarAlerta('Gamificação', error.message || 'Não foi possível resgatar esta missão.', 'erro');
+      return false;
+    }
+  };
+
+  const adicionarDesafio = () => {
+    mostrarAlerta('Missões automáticas', 'Os desafios agora são calculados automaticamente com base nas suas ações reais no Yeto.', 'aviso');
+  };
+
+  useEffect(() => {
+    if (!userId) return;
+    void carregarGamificacao({ silent: true });
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+
+    const timerId = setTimeout(() => {
+      void carregarGamificacao({ silent: true });
+    }, 300);
+
+    return () => clearTimeout(timerId);
+  }, [
+    userId,
+    contas.length,
+    despesas.length,
+    receitas.length,
+    orcamentos.length,
+    listaCompras.lists.length,
+    pagamentosFixos.filter(item => item.pagoEsteMes || item.is_paid_this_month).length,
+    dividas.filter(item => item.pago || item.is_paid).length,
+    projetos.reduce((total, item) => total + Number(item.valorGuardado || item.saved_amount || 0), 0)
+  ]);
 
   // Estado Global de Categorias
   const [categoriasEntradas, setCategoriasEntradas] = useState(['Salário', 'Bónus', 'Rendas', 'Venda', 'Outros']);
@@ -696,6 +863,10 @@ export function FinanceProvider({ children, userId, initialUser }) {
           userId,
           name: dados.nome !== undefined ? dados.nome : usuario.nome,
           occupation: dados.profissao !== undefined ? dados.profissao : usuario.profissao,
+          gender: dados.genero !== undefined ? dados.genero : usuario.genero,
+          province: dados.provincia !== undefined ? dados.provincia : usuario.provincia,
+          municipality: dados.municipio !== undefined ? dados.municipio : usuario.municipio,
+          city: dados.cidade !== undefined ? dados.cidade : usuario.cidade,
           avatar_url: dados.foto !== undefined ? dados.foto : usuario.foto,
           newPassword: dados.novaSenha || ''
         })
@@ -707,7 +878,16 @@ export function FinanceProvider({ children, userId, initialUser }) {
       setUsuario(prev => ({
         ...prev,
         nome: data.user.name,
+        emailVerificado: Boolean(data.user.email_verified),
         profissao: data.user.occupation || '',
+        genero: data.user.gender || '',
+        provincia: data.user.province || '',
+        municipio: data.user.municipality || '',
+        cidade: data.user.city || '',
+        ultimoLogin: data.user.last_login_at || prev.ultimoLogin,
+        ultimoIp: data.user.last_login_ip || prev.ultimoIp,
+        ultimoDispositivo: data.user.last_login_device || prev.ultimoDispositivo,
+        totalDispositivos: Number(data.user.device_count || prev.totalDispositivos || 0),
         foto: data.user.avatar_url || null,
         avatar: data.user.name ? data.user.name.charAt(0).toUpperCase() : prev.avatar,
         plan_type: data.user.plan_type,
@@ -716,6 +896,31 @@ export function FinanceProvider({ children, userId, initialUser }) {
       }));
 
       mostrarAlerta('Perfil Atualizado', 'As suas informações foram guardadas na base de dados com sucesso!', 'sucesso');
+      const storedUser = getStoredUser();
+      if (storedUser?.id === userId) {
+        saveSession({
+          ...storedUser,
+          name: data.user.name,
+          email: data.user.email || storedUser.email,
+          email_verified: Boolean(data.user.email_verified),
+          occupation: data.user.occupation || '',
+          avatar_url: data.user.avatar_url || null,
+          gender: data.user.gender || '',
+          province: data.user.province || '',
+          municipality: data.user.municipality || '',
+          city: data.user.city || '',
+          last_login_at: data.user.last_login_at || storedUser.last_login_at || '',
+          last_login_ip: data.user.last_login_ip || storedUser.last_login_ip || '',
+          last_login_device: data.user.last_login_device || storedUser.last_login_device || '',
+          device_count: Number(data.user.device_count || storedUser.device_count || 0),
+          plan_type: data.user.plan_type || storedUser.plan_type,
+          subscription_plan: data.user.subscription_plan || storedUser.subscription_plan,
+          created_at: data.user.created_at || storedUser.created_at,
+          plan_expires_at: data.user.plan_expires_at || storedUser.plan_expires_at,
+          admin_permissions: storedUser.admin_permissions || usuario.adminPermissions || {}
+        });
+      }
+
       if (dados.novaSenha) {
         mostrarAlerta('Segurança', 'A sua senha foi alterada.', 'sucesso');
       }
@@ -808,6 +1013,47 @@ export function FinanceProvider({ children, userId, initialUser }) {
     }
   };
 
+  const refreshPaymentStatus = async () => {
+    if (!userId) return;
+
+    try {
+      const response = await apiFetch(`/api/finances/payment-status/${userId}`);
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const notifications = data.notifications || [];
+
+      notifications.forEach(item => {
+        if (item.status === 'internal') {
+          adicionarNotificacao(
+            item.title || 'Notificação Yeto',
+            item.message || 'Tem uma nova atualização na sua conta.',
+            item.tab || null
+          );
+          return;
+        }
+
+        if (item.status === 'approved') {
+          adicionarNotificacao(
+            'Pagamento aprovado',
+            'O seu comprovativo foi aprovado e o seu plano foi atualizado.',
+            'planos'
+          );
+        }
+
+        if (item.status === 'rejected') {
+          adicionarNotificacao(
+            'Pagamento rejeitado',
+            item.rejection_reason || 'O seu comprovativo não foi aprovado. Reveja os dados e envie novamente.',
+            'planos'
+          );
+        }
+      });
+    } catch (error) {
+      console.warn('Erro ao verificar estado do pagamento:', error);
+    }
+  };
+
   useEffect(() => {
     if (!userId) {
       setAssistantUnreadCount(0);
@@ -818,8 +1064,10 @@ export function FinanceProvider({ children, userId, initialUser }) {
     }
 
     refreshAssistantSummary({ notify: false });
+    refreshPaymentStatus();
     const intervalId = setInterval(() => {
       refreshAssistantSummary({ notify: true });
+      refreshPaymentStatus();
     }, 20000);
 
     return () => clearInterval(intervalId);
@@ -2132,25 +2380,51 @@ export function FinanceProvider({ children, userId, initialUser }) {
     try {
       const res = await apiFetch('/api/gamification/redeem', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId })
       });
+      const data = await readJsonResponse(res, 'Falha ao resgatar Premium.');
+
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Falha ao resgatar premium');
+        throw new Error(data.error || 'Falha ao resgatar Premium.');
       }
 
-      const data = await res.json();
+      const updatedUser = data.user || {};
+      const planAccess = getPlanAccess({
+        ...usuario,
+        ...updatedUser,
+        created_at: usuario.created_at
+      });
 
-      // Atualizar no contexto
-      setUsuario(prev => ({ ...prev, plan_type: data.user.plan_type }));
-      setYetoPoints(data.user.yeto_points);
+      setUsuario(prev => ({
+        ...prev,
+        plan_type: updatedUser.plan_type || prev.plan_type,
+        subscription_plan: planAccess.subscription_plan,
+        plan_expires_at: planAccess.planExpiresAt,
+        trialDaysLeft: planAccess.trialDaysLeft,
+        isPremium: planAccess.isPremium,
+        planExpired: planAccess.planExpired,
+        isTrialActive: planAccess.isTrialActive,
+        hasAnnualAccess: planAccess.hasAnnualAccess
+      }));
 
-      mostrarAlerta('Parabéns! 🎉', data.message, 'sucesso');
+      setYetoPoints(Number(updatedUser.yeto_points || 0));
+      applyGamificationSummary(data.summary);
+
+      const storedUser = getStoredUser();
+      if (storedUser) {
+        saveSession({
+          ...storedUser,
+          ...updatedUser,
+          subscription_plan: planAccess.subscription_plan,
+          plan_expires_at: planAccess.planExpiresAt
+        });
+      }
+
+      mostrarAlerta('Premium ativado!', data.message || 'Resgate concluído com sucesso.', 'sucesso');
       return true;
     } catch (err) {
       console.error(err);
-      mostrarAlerta('Atenção', err.message, 'sucesso');
+      mostrarAlerta('Atenção', err.message || 'Não foi possível resgatar Premium.', 'erro');
       return false;
     }
   };
@@ -2578,7 +2852,9 @@ export function FinanceProvider({ children, userId, initialUser }) {
       atualizarItemListaCompras, eliminarItemListaCompras, eliminarListaCompras,
       adicionarPagamentoFixo, marcarPagamentoFixoComoPago,
       saldoTotal,
-      yetoPoints, nivelAtual, desafiosAtivos, conquistas, completarDesafio, resgatarPremium, adicionarDesafio,
+      yetoPoints, nivelAtual, nextLevelPoints, desafiosAtivos, conquistas,
+      gamificationRewards, gamificationHistory, isGamificationLoading,
+      carregarGamificacao, completarDesafio, resgatarPremium, adicionarDesafio,
       isLoadingData
     }}>
       {children}

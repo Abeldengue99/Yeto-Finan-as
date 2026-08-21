@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Planos from './Planos';
-import { apiFetch, readJsonResponse } from '../utils/api';
+import { API_OFFLINE_MESSAGE, apiFetch, readJsonResponse } from '../utils/api';
 
 const familyImg = '/login_family.png?v=4';
 
@@ -13,6 +13,10 @@ export default function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [occupation, setOccupation] = useState('');
+  const [gender, setGender] = useState('');
+  const [province, setProvince] = useState('');
+  const [municipality, setMunicipality] = useState('');
+  const [city, setCity] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
@@ -22,6 +26,49 @@ export default function LoginScreen({ onLogin }) {
   const [successMsg, setSuccessMsg] = useState('');
 
   const isRegistering = flowState === 'register';
+
+  const getFriendlyError = (error) => {
+    const message = error?.message || '';
+    const normalizedMessage = message.toLowerCase();
+
+    if (
+      message === API_OFFLINE_MESSAGE ||
+      normalizedMessage.includes('failed to fetch') ||
+      normalizedMessage.includes('servidor temporariamente')
+    ) {
+      return 'Não conseguimos concluir a ligação. Verifique a internet e tente novamente.';
+    }
+
+    return message;
+  };
+
+  const getDeviceInfo = () => {
+    const userAgent = navigator.userAgent || '';
+    const storedDeviceId = localStorage.getItem('yeto-offline-device-id');
+    const deviceId = storedDeviceId || `device_${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
+    if (!storedDeviceId) localStorage.setItem('yeto-offline-device-id', deviceId);
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
+    const browser = /Edg/i.test(userAgent) ? 'Edge'
+      : /Chrome/i.test(userAgent) ? 'Chrome'
+        : /Safari/i.test(userAgent) ? 'Safari'
+          : /Firefox/i.test(userAgent) ? 'Firefox'
+            : 'Browser';
+    const os = /Android/i.test(userAgent) ? 'Android'
+      : /iPhone|iPad|iPod/i.test(userAgent) ? 'iOS'
+        : /Windows/i.test(userAgent) ? 'Windows'
+          : /Mac OS/i.test(userAgent) ? 'macOS'
+            : /Linux/i.test(userAgent) ? 'Linux'
+              : 'Sistema desconhecido';
+
+    return {
+      deviceId,
+      deviceType: isMobile ? 'mobile' : 'desktop',
+      browser,
+      os,
+      screen: `${window.screen?.width || 0}x${window.screen?.height || 0}`,
+      language: navigator.language || ''
+    };
+  };
 
   // Limpa mensagens quando muda de fluxo
   useEffect(() => {
@@ -38,7 +85,7 @@ export default function LoginScreen({ onLogin }) {
     try {
       const response = await apiFetch('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, deviceInfo: getDeviceInfo() })
       });
 
       const data = await readJsonResponse(response, 'Erro ao efetuar login');
@@ -54,7 +101,7 @@ export default function LoginScreen({ onLogin }) {
 
       onLogin(data);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(getFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -68,7 +115,17 @@ export default function LoginScreen({ onLogin }) {
     try {
       const response = await apiFetch('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ name, email, password, occupation })
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          occupation,
+          gender,
+          province,
+          municipality,
+          city,
+          deviceInfo: getDeviceInfo()
+        })
       });
 
       const data = await readJsonResponse(response, 'Erro ao criar conta');
@@ -84,7 +141,7 @@ export default function LoginScreen({ onLogin }) {
         onLogin(data);
       }
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(getFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -98,7 +155,7 @@ export default function LoginScreen({ onLogin }) {
     try {
       const response = await apiFetch('/api/auth/verify-email', {
         method: 'POST',
-        body: JSON.stringify({ email, code: verificationCode })
+        body: JSON.stringify({ email, code: verificationCode, deviceInfo: getDeviceInfo() })
       });
 
       const data = await readJsonResponse(response, 'Erro ao verificar conta');
@@ -110,7 +167,7 @@ export default function LoginScreen({ onLogin }) {
       // Verificação bem sucedida, faz login
       onLogin(data);
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(getFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -128,7 +185,7 @@ export default function LoginScreen({ onLogin }) {
       if (!response.ok) throw new Error(data.error);
       setSuccessMsg('Novo código enviado com sucesso!');
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(getFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -154,7 +211,7 @@ export default function LoginScreen({ onLogin }) {
       setFlowState('reset');
       setSuccessMsg(data.message || 'Verifique o seu email com o código de recuperação.');
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(getFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -182,7 +239,7 @@ export default function LoginScreen({ onLogin }) {
       setPassword('');
       setVerificationCode('');
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(getFriendlyError(err));
     } finally {
       setIsLoading(false);
     }
@@ -316,6 +373,27 @@ export default function LoginScreen({ onLogin }) {
             <div className="input-group" style={{ marginBottom: 0 }}>
               <label>💼 Profissão</label>
               <input type="text" placeholder="Opcional..." value={occupation} onChange={(e) => setOccupation(e.target.value)} />
+            </div>
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label>Género</label>
+              <select value={gender} onChange={(e) => setGender(e.target.value)}>
+                <option value="">Prefiro não informar</option>
+                <option value="feminino">Feminino</option>
+                <option value="masculino">Masculino</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label>Província</label>
+              <input type="text" placeholder="Ex: Luanda" value={province} onChange={(e) => setProvince(e.target.value)} />
+            </div>
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label>Município</label>
+              <input type="text" placeholder="Ex: Belas" value={municipality} onChange={(e) => setMunicipality(e.target.value)} />
+            </div>
+            <div className="input-group" style={{ marginBottom: 0 }}>
+              <label>Cidade/Bairro</label>
+              <input type="text" placeholder="Opcional" value={city} onChange={(e) => setCity(e.target.value)} />
             </div>
           </div>
         )}
@@ -463,12 +541,12 @@ export default function LoginScreen({ onLogin }) {
                 A palavra <strong>Yeto</strong> significa <em>"Nosso"</em> na nossa terra. E é exatamente esse o espírito: o <strong>Nosso</strong> dinheiro, a <strong>Nossa</strong> família, o <strong>Nosso</strong> futuro. 
               </p>
               <div style={{ textAlign: 'left', marginTop: '1.5rem', background: '#f8f9fc', padding: '1.5rem', borderRadius: '15px' }}>
-                <h3 style={{ color: '#373392', marginBottom: '1rem', fontSize: '1.2rem' }}>Porquê usar o Yeto Finanças?</h3>
+                <h3 style={{ color: '#373392', marginBottom: '1rem', fontSize: '1.2rem' }}>Porquê criar a sua conta no Yeto Finanças?</h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
-                  <li>✅ <strong>Simplicidade:</strong> Adeus às folhas de cálculo complicadas. Tudo é simples e visual.</li>
-                  <li>✅ <strong>Controlo Total:</strong> Gira as despesas da casa, registe o fundo de emergência e partilhe o controlo das dívidas.</li>
-                  <li>✅ <strong>Para a Família Angolana:</strong> Desenvolvido de raiz a pensar na nossa realidade (Kixikilas, propinas, divisas).</li>
-                  <li>✅ <strong>Gamificação:</strong> Ganhe "YetoPoints" ao atingir metas e troque-os por meses gratuitos do plano Premium!</li>
+                  <li>✅ <strong>Clareza imediata:</strong> Veja quanto entra, quanto sai e quanto ainda pode gastar, sem folhas de cálculo nem confusão.</li>
+                  <li>✅ <strong>Decisões antes do aperto:</strong> Acompanhe contas fixas, dívidas, metas, kixikila e compras para evitar surpresas no fim do mês.</li>
+                  <li>✅ <strong>Feito para Angola:</strong> Pensado para salário mensal, apoio familiar, propinas, prestações, divisas, mercado e a realidade das famílias angolanas.</li>
+                  <li>✅ <strong>Motivação para poupar:</strong> Transforme disciplina financeira em conquistas com metas, YetoPoints e recompensas dentro da plataforma.</li>
                 </ul>
               </div>
             </div>
@@ -484,8 +562,8 @@ export default function LoginScreen({ onLogin }) {
 
             <div style={{ textAlign: 'center', marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #eee' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-                Concebido com orgulho para as famílias de Angola 🇦🇴<br/>
-                Desenvolvido por <a href="https://www.linkedin.com/in/abeldengue/" target="_blank" rel="noopener noreferrer" style={{ color: '#373392', fontWeight: 'bold', textDecoration: 'none' }}>Abel Dengue</a>
+                2026 © Yeto Finanças. Todos os direitos reservados.<br/>
+               <br/> Desenvolvido por <a href="https://www.linkedin.com/in/abeldengue/" target="_blank" rel="noopener noreferrer" style={{ color: '#373392', fontWeight: 'bold', textDecoration: 'none' }}>Abel Dengue</a>
               </p>
             </div>
           </div>

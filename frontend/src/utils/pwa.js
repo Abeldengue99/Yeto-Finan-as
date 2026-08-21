@@ -16,6 +16,20 @@ export function activateWaitingServiceWorker(registration) {
 export function registerServiceWorker({ onNeedRefresh } = {}) {
   if (!('serviceWorker' in navigator)) return undefined;
 
+  if (import.meta.env.DEV) {
+    navigator.serviceWorker.getRegistrations?.()
+      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
+      .catch(() => undefined);
+
+    if ('caches' in window) {
+      caches.keys()
+        .then(keys => Promise.all(keys.filter(key => key.startsWith('yeto-pwa-')).map(key => caches.delete(key))))
+        .catch(() => undefined);
+    }
+
+    return undefined;
+  }
+
   let refreshing = false;
 
   const handleControllerChange = () => {

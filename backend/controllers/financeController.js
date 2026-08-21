@@ -1,4 +1,6 @@
 const pool = require('../config/database');
+const { getAdminPermissionsForUser, hasFullAdminAccess } = require('../middleware/auth');
+const { consumeUserNotifications } = require('../services/notificationService');
 
 const OWNED_TABLES = new Set([
   'accounts',
@@ -14,7 +16,7 @@ const OWNED_TABLES = new Set([
 ]);
 
 function isAdminRequest(req) {
-  return req.user?.plan_type === 'admin';
+  return hasFullAdminAccess(req.user);
 }
 
 function getRequestUserId(req, fallbackUserId) {
@@ -27,7 +29,7 @@ async function getOwnedResource(db, table, id, req) {
   }
 
   const params = [id];
-  let query = `SELECT * FROM ${table} WHERE id = $1`;
+  let query = `SELECT * FROM ${table} WHERE id = $1 AND deleted_at IS NULL`;
 
   if (!isAdminRequest(req)) {
     query += ' AND user_id = $2';
@@ -42,7 +44,7 @@ async function ensureAccountOwnership(db, accountId, ownerUserId) {
   if (!accountId || !ownerUserId) return false;
 
   const result = await db.query(
-    'SELECT id FROM accounts WHERE id = $1 AND user_id = $2',
+      'SELECT id FROM accounts WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL',
     [accountId, ownerUserId]
   );
 
@@ -247,7 +249,13 @@ const getUserFinances = async (req, res) => {
   try {
     // 0. Fetch User Info
     const userRes = await pool.query(
-      'SELECT name, email, occupation, avatar_url, yeto_points, plan_type, subscription_plan, created_at, plan_expires_at FROM users WHERE id = $1',
+      `SELECT id, name, email, email_verified, occupation, avatar_url, yeto_points,
+              gender, province, municipality, city,
+              last_login_at, last_login_ip, last_login_device,
+              plan_type, subscription_plan, created_at, plan_expires_at,
+              (SELECT COUNT(*)::int FROM user_devices WHERE user_id = users.id) AS device_count
+       FROM users
+       WHERE id = $1`,
       [userId]
     );
     const user = userRes.rows[0];
@@ -255,6 +263,8 @@ const getUserFinances = async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'Utilizador não encontrado.' });
     }
+
+    user.admin_permissions = await getAdminPermissionsForUser(user);
 
     if (user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
       const expiryResult = await pool.query(
@@ -268,37 +278,37 @@ const getUserFinances = async (req, res) => {
     }
 
     // 1. Fetch Accounts
-    const accountsResult = await pool.query('SELECT * FROM accounts WHERE user_id = $1', [userId]);
+    const accountsResult = await pool.query('SELECT * FROM accounts WHERE user_id = $1 AND deleted_at IS NULL', [userId]);
     const accounts = accountsResult.rows;
 
     // 2. Fetch Transactions (Recent)
-    const transactionsResult = await pool.query('SELECT * FROM transactions WHERE user_id = $1 ORDER BY transaction_date DESC LIMIT 50', [userId]);
+    const transactionsResult = await pool.query('SELECT * FROM transactions WHERE user_id = $1 AND deleted_at IS NULL ORDER BY transaction_date DESC LIMIT 50', [userId]);
     const transactions = transactionsResult.rows;
 
     // 3. Fetch Debts
-    const debtsResult = await pool.query('SELECT * FROM debts WHERE user_id = $1', [userId]);
+    const debtsResult = await pool.query('SELECT * FROM debts WHERE user_id = $1 AND deleted_at IS NULL', [userId]);
     const debts = debtsResult.rows;
 
     // 4. Fetch Fixed Payments
-    const fixedPaymentsResult = await pool.query('SELECT * FROM fixed_payments WHERE user_id = $1', [userId]);
+    const fixedPaymentsResult = await pool.query('SELECT * FROM fixed_payments WHERE user_id = $1 AND deleted_at IS NULL', [userId]);
     const fixedPayments = fixedPaymentsResult.rows;
 
     // 5. Fetch Projects
-    const projectsResult = await pool.query('SELECT * FROM projects WHERE user_id = $1', [userId]);
+    const projectsResult = await pool.query('SELECT * FROM projects WHERE user_id = $1 AND deleted_at IS NULL', [userId]);
     const projects = projectsResult.rows;
 
     // 6. Fetch Kixikilas
-    const kixikilasResult = await pool.query('SELECT * FROM kixikila_groups WHERE user_id = $1', [userId]);
+    const kixikilasResult = await pool.query('SELECT * FROM kixikila_groups WHERE user_id = $1 AND deleted_at IS NULL', [userId]);
     const kixikilas = kixikilasResult.rows;
 
     // 7. Fetch Divisas
-    const divisasResult = await pool.query('SELECT * FROM foreign_currency WHERE user_id = $1 ORDER BY purchase_date DESC', [userId]);
+    const divisasResult = await pool.query('SELECT * FROM foreign_currency WHERE user_id = $1 AND deleted_at IS NULL ORDER BY purchase_date DESC', [userId]);
     const divisas = divisasResult.rows;
 
     // 8. Fetch current month budgets
     const currentMonth = getMonthKey();
     const budgetsResult = await pool.query(
-      'SELECT * FROM budgets WHERE user_id = $1 AND month_key = $2 ORDER BY category ASC',
+      'SELECT * FROM budgets WHERE user_id = $1 AND month_key = $2 AND deleted_at IS NULL ORDER BY category ASC',
       [userId, currentMonth]
     );
     const budgets = budgetsResult.rows;
@@ -393,7 +403,7 @@ const getBudgets = async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT * FROM budgets WHERE user_id = $1 AND month_key = $2 ORDER BY category ASC',
+      'SELECT * FROM budgets WHERE user_id = $1 AND month_key = $2 AND deleted_at IS NULL ORDER BY category ASC',
       [userId, monthKey]
     );
 
@@ -424,6 +434,7 @@ const getFinancialCalendar = async (req, res) => {
         `SELECT id, type, category, description, amount, transaction_date
          FROM transactions
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND transaction_date >= $2::date
            AND transaction_date < ($2::date + INTERVAL '1 month')
          ORDER BY transaction_date ASC`,
@@ -433,6 +444,7 @@ const getFinancialCalendar = async (req, res) => {
         `SELECT id, name, category, amount, due_day, is_paid_this_month
          FROM fixed_payments
          WHERE user_id = $1
+           AND deleted_at IS NULL
          ORDER BY due_day ASC`,
         [userId]
       ),
@@ -440,6 +452,7 @@ const getFinancialCalendar = async (req, res) => {
         `SELECT id, person_name, type, amount, due_date, purpose, is_paid
          FROM debts
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND due_date >= $2::date
            AND due_date < ($2::date + INTERVAL '1 month')
          ORDER BY due_date ASC`,
@@ -449,6 +462,7 @@ const getFinancialCalendar = async (req, res) => {
         `SELECT id, name, category, target_amount, saved_amount, deadline
          FROM projects
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND deadline >= $2::date
            AND deadline < ($2::date + INTERVAL '1 month')
          ORDER BY deadline ASC`,
@@ -457,7 +471,8 @@ const getFinancialCalendar = async (req, res) => {
       pool.query(
         `SELECT id, name, quota_value, hand_value, periodicity, start_date
          FROM kixikila_groups
-         WHERE user_id = $1`,
+         WHERE user_id = $1
+           AND deleted_at IS NULL`,
         [userId]
       )
     ]);
@@ -597,11 +612,12 @@ const getMonthEndForecast = async (req, res) => {
 
   try {
     const [accountsRes, transactionsRes, fixedRes, debtsRes, kixikilasRes, budgetsRes] = await Promise.all([
-      pool.query('SELECT COALESCE(SUM(balance), 0) AS balance FROM accounts WHERE user_id = $1', [userId]),
+      pool.query('SELECT COALESCE(SUM(balance), 0) AS balance FROM accounts WHERE user_id = $1 AND deleted_at IS NULL', [userId]),
       pool.query(
         `SELECT id, type, category, description, amount, transaction_date
          FROM transactions
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND transaction_date >= $2::date
            AND transaction_date <= $3::date
          ORDER BY transaction_date ASC`,
@@ -611,6 +627,7 @@ const getMonthEndForecast = async (req, res) => {
         `SELECT id, name, category, amount, due_day, is_paid_this_month
          FROM fixed_payments
          WHERE user_id = $1
+           AND deleted_at IS NULL
          ORDER BY due_day ASC`,
         [userId]
       ),
@@ -618,6 +635,7 @@ const getMonthEndForecast = async (req, res) => {
         `SELECT id, person_name, type, amount, due_date, purpose, is_paid
          FROM debts
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND is_paid = FALSE
            AND due_date >= $2::date
            AND due_date < ($2::date + INTERVAL '1 month')
@@ -627,13 +645,15 @@ const getMonthEndForecast = async (req, res) => {
       pool.query(
         `SELECT id, name, quota_value, hand_value, periodicity, start_date
          FROM kixikila_groups
-         WHERE user_id = $1`,
+         WHERE user_id = $1
+           AND deleted_at IS NULL`,
         [userId]
       ),
       pool.query(
         `SELECT category, monthly_limit
          FROM budgets
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND month_key = $2`,
         [userId, monthKey]
       )
@@ -838,7 +858,7 @@ const upsertBudget = async (req, res) => {
       `INSERT INTO budgets (user_id, category, month_key, monthly_limit)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (user_id, category, month_key)
-       DO UPDATE SET monthly_limit = EXCLUDED.monthly_limit, updated_at = CURRENT_TIMESTAMP
+       DO UPDATE SET monthly_limit = EXCLUDED.monthly_limit, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
       [userId, cleanCategory, monthKey, limit]
     );
@@ -862,7 +882,13 @@ const deleteBudget = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM budgets WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE budgets
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Orçamento não encontrado.' });
@@ -905,7 +931,7 @@ const getShoppingLists = async (req, res) => {
       pool.query(
         `SELECT id, name, month_key
          FROM shopping_lists
-         WHERE user_id = $1 AND month_key = $2
+         WHERE user_id = $1 AND month_key = $2 AND deleted_at IS NULL
          ORDER BY created_at DESC`,
         [userId, monthKey]
       ),
@@ -913,20 +939,24 @@ const getShoppingLists = async (req, res) => {
         `SELECT sli.*
          FROM shopping_list_items sli
          INNER JOIN shopping_lists sl ON sl.id = sli.list_id
-         WHERE sli.user_id = $1 AND sl.month_key = $2
+         WHERE sli.user_id = $1
+           AND sli.deleted_at IS NULL
+           AND sl.deleted_at IS NULL
+           AND sl.month_key = $2
          ORDER BY sli.created_at ASC`,
         [userId, monthKey]
       ),
       pool.query(
         `SELECT category, monthly_limit
          FROM budgets
-         WHERE user_id = $1 AND month_key = $2`,
+         WHERE user_id = $1 AND month_key = $2 AND deleted_at IS NULL`,
         [userId, monthKey]
       ),
       pool.query(
         `SELECT category, COALESCE(SUM(amount), 0) AS spent
          FROM transactions
          WHERE user_id = $1
+           AND deleted_at IS NULL
            AND type = 'expense'
            AND transaction_date >= $2::date
            AND transaction_date < ($2::date + INTERVAL '1 month')
@@ -1115,7 +1145,13 @@ const deleteShoppingListItem = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM shopping_list_items WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE shopping_list_items
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Item não encontrado.' });
@@ -1134,11 +1170,24 @@ const deleteShoppingList = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM shopping_lists WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE shopping_lists
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Lista de compras não encontrada.' });
     }
+
+    await pool.query(
+      `UPDATE shopping_list_items
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE list_id = $1 AND deleted_at IS NULL${isAdminRequest(req) ? '' : ' AND user_id = $2'}`,
+      isAdminRequest(req) ? [id] : [id, req.user.id]
+    );
 
     res.json({ message: 'Lista de compras eliminada com sucesso.' });
   } catch (error) {
@@ -1531,7 +1580,7 @@ const getPaymentStatus = async (req, res) => {
   try {
     // Busca pagamentos aprovados ou rejeitados que ainda não foram notificados
     const result = await pool.query(
-      `SELECT id, status, submitted_at FROM payment_approvals 
+      `SELECT id, status, submitted_at, rejection_reason FROM payment_approvals
        WHERE user_id = $1 AND status IN ('approved', 'rejected') AND notified_user = false`,
       [userId]
     );
@@ -1545,7 +1594,21 @@ const getPaymentStatus = async (req, res) => {
       );
     }
 
-    res.json({ notifications: result.rows });
+    const internalNotifications = await consumeUserNotifications(userId);
+    res.json({
+      notifications: [
+        ...result.rows,
+        ...internalNotifications.map(item => ({
+          id: item.id,
+          status: 'internal',
+          title: item.title,
+          message: item.message,
+          tab: item.tab,
+          type: item.type,
+          created_at: item.created_at
+        }))
+      ]
+    });
   } catch (err) {
     console.error('Erro ao verificar status de pagamento:', err);
     res.json({ notifications: [] });
@@ -1594,7 +1657,7 @@ const updateTransaction = async (req, res) => {
     );
 
     const result = await client.query(
-      'UPDATE transactions SET account_id = $1, type = $2, description = $3, amount = $4, category = $5, transaction_date = $6 WHERE id = $7 AND user_id = $8 RETURNING *',
+      'UPDATE transactions SET account_id = $1, type = $2, description = $3, amount = $4, category = $5, transaction_date = $6, updated_at = CURRENT_TIMESTAMP WHERE id = $7 AND user_id = $8 AND deleted_at IS NULL RETURNING *',
       [newAccountId, newType, description, newAmount, category, transaction_date, id, old.user_id]
     );
     await client.query('COMMIT');
@@ -1626,7 +1689,10 @@ const deleteTransaction = async (req, res) => {
       await client.query('UPDATE accounts SET balance = balance - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3', [Number(old.amount), old.account_id, old.user_id]);
     }
 
-    await client.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [id, old.user_id]);
+    await client.query(
+      'UPDATE transactions SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL',
+      [id, old.user_id]
+    );
     await client.query('COMMIT');
     res.json({ message: 'Transação eliminada com sucesso.' });
   } catch (error) {
@@ -1654,7 +1720,7 @@ const updateAccount = async (req, res) => {
 
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4${balanceSet}, updated_at = CURRENT_TIMESTAMP WHERE id = $5${ownerFilter} RETURNING *`,
+      `UPDATE accounts SET name = $1, type = $2, iban = $3, color_code = $4${balanceSet}, updated_at = CURRENT_TIMESTAMP WHERE id = $5 AND deleted_at IS NULL${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
@@ -1670,8 +1736,20 @@ const deleteAccount = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM accounts WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE accounts
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Conta não encontrada.' });
+    await pool.query(
+      `UPDATE transactions
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE account_id = $1 AND deleted_at IS NULL${isAdminRequest(req) ? '' : ' AND user_id = $2'}`,
+      isAdminRequest(req) ? [id] : [id, req.user.id]
+    );
     res.json({ message: 'Conta eliminada com sucesso.' });
   } catch (error) {
     console.error('Erro ao eliminar conta:', error);
@@ -1687,7 +1765,7 @@ const updateDebt = async (req, res) => {
     const params = [person_name, type, Number(amount), due_date, purpose, id];
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE debts SET person_name = $1, type = $2, amount = $3, due_date = $4, purpose = $5 WHERE id = $6${ownerFilter} RETURNING *`,
+      `UPDATE debts SET person_name = $1, type = $2, amount = $3, due_date = $4, purpose = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6 AND deleted_at IS NULL${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Dívida não encontrada.' });
@@ -1703,7 +1781,13 @@ const deleteDebt = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM debts WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE debts
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Dívida não encontrada.' });
     res.json({ message: 'Dívida eliminada com sucesso.' });
   } catch (error) {
@@ -1720,7 +1804,7 @@ const updateFixedPayment = async (req, res) => {
     const params = [name, Number(amount), Number(due_day), category, id];
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE fixed_payments SET name = $1, amount = $2, due_day = $3, category = $4 WHERE id = $5${ownerFilter} RETURNING *`,
+      `UPDATE fixed_payments SET name = $1, amount = $2, due_day = $3, category = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 AND deleted_at IS NULL${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Pagamento fixo não encontrado.' });
@@ -1736,7 +1820,13 @@ const deleteFixedPayment = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM fixed_payments WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE fixed_payments
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Pagamento fixo não encontrado.' });
     res.json({ message: 'Pagamento fixo eliminado com sucesso.' });
   } catch (error) {
@@ -1753,7 +1843,7 @@ const updateProject = async (req, res) => {
     const params = [name, category, Number(target_amount), Number(saved_amount || 0), deadline || null, id];
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE projects SET name = $1, category = $2, target_amount = $3, saved_amount = $4, deadline = $5 WHERE id = $6${ownerFilter} RETURNING *`,
+      `UPDATE projects SET name = $1, category = $2, target_amount = $3, saved_amount = $4, deadline = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6 AND deleted_at IS NULL${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Projeto não encontrado.' });
@@ -1769,7 +1859,13 @@ const deleteProject = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM projects WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE projects
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Projeto não encontrado.' });
     res.json({ message: 'Projeto eliminado com sucesso.' });
   } catch (error) {
@@ -1786,7 +1882,7 @@ const updateKixikila = async (req, res) => {
     const params = [name, periodicity, Number(quota_value), Number(hand_value), start_date || null, id];
     const ownerFilter = appendOwnerFilter(req, params);
     const result = await pool.query(
-      `UPDATE kixikila_groups SET name = $1, periodicity = $2, quota_value = $3, hand_value = $4, start_date = $5 WHERE id = $6${ownerFilter} RETURNING *`,
+      `UPDATE kixikila_groups SET name = $1, periodicity = $2, quota_value = $3, hand_value = $4, start_date = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6 AND deleted_at IS NULL${ownerFilter} RETURNING *`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Kixikila não encontrada.' });
@@ -1802,7 +1898,13 @@ const deleteKixikila = async (req, res) => {
   try {
     const params = [id];
     const ownerFilter = appendOwnerFilter(req, params);
-    const result = await pool.query(`DELETE FROM kixikila_groups WHERE id = $1${ownerFilter} RETURNING id`, params);
+    const result = await pool.query(
+      `UPDATE kixikila_groups
+       SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND deleted_at IS NULL${ownerFilter}
+       RETURNING id`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Kixikila não encontrada.' });
     res.json({ message: 'Kixikila eliminada com sucesso.' });
   } catch (error) {

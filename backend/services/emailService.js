@@ -124,6 +124,36 @@ const sendPaymentApproved = async (email, name, planType) => {
   });
 };
 
+const sendPaymentRejected = async (email, name, reason) => {
+  return sendEmail({
+    to: email,
+    subject: `Comprovativo nao aprovado | Yeto Financas`,
+    htmlContent: `
+      <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; background: #f8f9fc; border-radius: 20px; overflow: hidden;">
+        <div style="background: linear-gradient(135deg, #373392 0%, #4b46ba 100%); padding: 34px 28px; text-align: center;">
+          <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #FFB300, #FF8F00); border-radius: 16px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 12px;">
+            <span style="color: white; font-weight: 900; font-size: 26px;">Y</span>
+          </div>
+          <h1 style="color: white; margin: 0; font-size: 22px;">Yeto Financas</h1>
+        </div>
+        <div style="padding: 34px 28px;">
+          <h2 style="color: #1f2130; margin: 0 0 10px 0;">Olá, ${name || 'utilizador'}.</h2>
+          <p style="color: #8a8ca3; font-size: 16px; line-height: 1.6;">
+            O comprovativo enviado ainda não pôde ser aprovado.
+          </p>
+          <div style="background: rgba(244, 91, 91, 0.1); border: 1px solid rgba(244, 91, 91, 0.25); border-radius: 16px; padding: 18px; margin: 22px 0;">
+            <p style="color: #1f2130; font-weight: bold; margin: 0 0 6px 0;">Motivo:</p>
+            <p style="color: #5b6078; margin: 0; line-height: 1.5;">${reason || 'Os dados do comprovativo precisam ser revistos.'}</p>
+          </div>
+          <p style="color: #8a8ca3; font-size: 14px; line-height: 1.6;">
+            Pode reenviar um novo comprovativo com os dados corrigidos ou contactar o suporte pelo Assistente.
+          </p>
+        </div>
+      </div>
+    `
+  });
+};
+
 /**
  * Envia código de recuperação de senha
  */
@@ -208,6 +238,7 @@ const sendMassPromotion = async (recipients, subject, htmlContent) => {
 module.exports = {
   sendVerificationCode,
   sendPaymentApproved,
+  sendPaymentRejected,
   sendPasswordReset,
   sendMassPromotion
 };

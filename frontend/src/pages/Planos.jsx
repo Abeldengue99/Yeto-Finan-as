@@ -9,13 +9,109 @@ export default function Planos({ user }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [selectedPlan, setSelectedPlan] = useState('anual');
-  const { adicionarNotificacao } = useFinance();
+  const [testimonials, setTestimonials] = useState([]);
+  const [testimonialForm, setTestimonialForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    message: ''
+  });
+  const [testimonialStatus, setTestimonialStatus] = useState('');
+  const [isSubmittingTestimonial, setIsSubmittingTestimonial] = useState(false);
+  const financeContext = useFinance();
+  const adicionarNotificacao = financeContext?.adicionarNotificacao || (() => {});
   const adminContext = useAdmin();
 
   const precoSemestral = adminContext?.planPrices?.semestral || 4999;
   const precoAnual = adminContext?.planPrices?.anual || 7999;
   const mensalEquivSemestral = Math.round(precoSemestral / 6);
   const mensalEquivAnual = Math.round(precoAnual / 12);
+  const faqs = [
+    {
+      pergunta: 'O que é o Yeto Finanças?',
+      resposta: 'É uma plataforma de gestão financeira familiar criada para ajudar famílias a organizarem receitas, despesas, dívidas, metas, kixikila, compras e compromissos mensais num só lugar.'
+    },
+    {
+      pergunta: 'Ao criar conta tenho acesso grátis?',
+      resposta: 'Sim. Cada novo utilizador recebe 1 mês grátis com acesso às funcionalidades principais para testar a plataforma com calma antes de decidir continuar num plano pago.'
+    },
+    {
+      pergunta: 'O que acontece quando termina o mês grátis?',
+      resposta: 'A conta continua ativa, mas algumas funcionalidades avançadas ficam bloqueadas. O utilizador pode continuar com recursos básicos ou fazer upgrade para recuperar o acesso completo.'
+    },
+    {
+      pergunta: 'O Yeto foi pensado para Angola?',
+      resposta: 'Sim. A plataforma considera hábitos financeiros comuns no contexto angolano, como salários mensais, compras de casa, dívidas informais, apoio familiar, prestações, kixikila e pagamentos em Kz.'
+    },
+    {
+      pergunta: 'Posso controlar bancos, carteiras e dinheiro em mãos?',
+      resposta: 'Sim. Pode registar contas bancárias, carteiras, saldo familiar, dinheiro a receber, dívidas a pagar e acompanhar como cada movimento afeta a vida financeira da família.'
+    },
+    {
+      pergunta: 'Como funciona o Orçamento Familiar?',
+      resposta: 'O utilizador define limites por categoria e acompanha quanto já gastou no mês. Isso ajuda a perceber se a família ainda está dentro do plano ou se precisa ajustar gastos.'
+    },
+    {
+      pergunta: 'Para que serve o Calendário Financeiro?',
+      resposta: 'Serve para visualizar salários, contas fixas, dívidas, prestações, kixikila e metas por mês, reduzindo esquecimentos e ajudando a planear melhor cada compromisso.'
+    },
+    {
+      pergunta: 'O que faz a Previsão do Fim do Mês?',
+      resposta: 'O sistema analisa entradas, saídas e compromissos para estimar se o mês termina com saldo positivo ou se existe risco de faltar dinheiro antes do fim do mês.'
+    },
+    {
+      pergunta: 'O que é o Modo Emergência?',
+      resposta: 'É uma funcionalidade que ajuda em momentos apertados, sugerindo prioridades, cortes temporários e categorias que podem ser congeladas para proteger o essencial.'
+    },
+    {
+      pergunta: 'Como funciona a Lista de Compras com Orçamento?',
+      resposta: 'A família cria uma lista de mercado com preços estimados e o Yeto compara o total com o orçamento disponível antes da compra acontecer.'
+    },
+    {
+      pergunta: 'Os meus dados ficam protegidos?',
+      resposta: 'A plataforma usa autenticação, controlo de sessão, permissões por utilizador, proteção contra acessos indevidos, validação de dados e registo de ações críticas para reforçar a segurança.'
+    },
+    {
+      pergunta: 'Como é feita a ativação do Premium?',
+      resposta: 'Depois do pagamento, o utilizador envia o comprovativo pela plataforma. A equipa administrativa valida o comprovativo e ativa o plano correspondente.'
+    },
+    {
+      pergunta: 'Posso usar no telemóvel?',
+      resposta: 'Sim. A interface foi preparada para funcionar em computador e telemóvel, incluindo instalação como aplicativo quando o navegador permitir.'
+    },
+    {
+      pergunta: 'A plataforma já está disponível para todos?',
+      resposta: 'Neste momento o Yeto Finanças está em fase de testes, com foco em estabilidade, segurança e melhoria da experiência antes da abertura ao público geral.'
+    }
+  ];
+
+  useEffect(() => {
+    setTestimonialForm(prev => ({
+      ...prev,
+      name: prev.name || user?.name || '',
+      email: prev.email || user?.email || ''
+    }));
+  }, [user]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const loadTestimonials = async () => {
+      try {
+        const response = await apiFetch('/api/testimonials');
+        const data = await response.json();
+        if (!ignore && response.ok) {
+          setTestimonials(Array.isArray(data.testimonials) ? data.testimonials : []);
+        }
+      } catch (error) {
+        if (!ignore) setTestimonials([]);
+      }
+    };
+
+    loadTestimonials();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   // Polling: verifica o estado dos comprovativos pendentes a cada 30s
   useEffect(() => {
@@ -32,6 +128,10 @@ export default function Planos({ user }) {
             if (notif.status === 'approved') {
               adicionarNotificacao('✅ Pagamento Aprovado', 'O seu pagamento foi aprovado! Já tem acesso a todas as funcionalidades Premium. Obrigado pela confiança!');
             } else if (notif.status === 'rejected') {
+              if (notif.rejection_reason) {
+                adicionarNotificacao('Pagamento Rejeitado', notif.rejection_reason);
+                return;
+              }
               adicionarNotificacao('❌ Pagamento Rejeitado', 'O seu comprovativo foi rejeitado. Por favor, verifique os dados e tente novamente ou contacte o suporte.');
             }
           });
@@ -93,6 +193,42 @@ export default function Planos({ user }) {
       setMessage('❌ Erro de conexão.');
     }
     setIsSubmitting(false);
+  };
+
+  const handleTestimonialSubmit = async (event) => {
+    event.preventDefault();
+    setTestimonialStatus('');
+
+    if (testimonialForm.name.trim().length < 2) {
+      setTestimonialStatus('Informe o seu nome para enviar o depoimento.');
+      return;
+    }
+
+    if (testimonialForm.message.trim().length < 20) {
+      setTestimonialStatus('Escreva pelo menos 20 caracteres para o depoimento ficar claro.');
+      return;
+    }
+
+    setIsSubmittingTestimonial(true);
+    try {
+      const response = await apiFetch('/api/testimonials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testimonialForm)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Não foi possível enviar o depoimento.');
+      }
+
+      setTestimonialStatus(data.message || 'Depoimento enviado com sucesso. Obrigado por partilhar a sua experiência.');
+      setTestimonialForm({ name: '', email: '', message: '' });
+    } catch (error) {
+      setTestimonialStatus(error.message || 'Erro ao enviar depoimento.');
+    } finally {
+      setIsSubmittingTestimonial(false);
+    }
   };
 
   return (
@@ -201,6 +337,89 @@ export default function Planos({ user }) {
         </div>
 
       </div>
+
+      <section className="planos-testimonial-section">
+        <div className="planos-testimonial-header">
+          <span>Experiências reais</span>
+          <h3>Deixe o seu depoimento sobre o Yeto</h3>
+          <p>
+            Conte como a plataforma está a ajudar na organização financeira da sua família.
+          </p>
+        </div>
+
+        <div className="planos-testimonial-layout">
+          <div className="planos-testimonial-carousel" aria-label="Depoimentos dos utilizadores">
+            {testimonials.length > 0 ? testimonials.map(item => (
+              <article className="planos-testimonial-card" key={item.id}>
+                <p>"{item.message}"</p>
+                <strong>{item.name}</strong>
+              </article>
+            )) : (
+              <article className="planos-testimonial-card planos-testimonial-empty">
+                <p>Os primeiros depoimentos vão aparecer aqui.</p>
+                <strong>Equipa Yeto</strong>
+              </article>
+            )}
+          </div>
+
+          <form className="planos-testimonial-form" onSubmit={handleTestimonialSubmit}>
+            <div className="testimonial-form-grid">
+              <label>
+                Nome
+                <input
+                  type="text"
+                  value={testimonialForm.name}
+                  onChange={(event) => setTestimonialForm(prev => ({ ...prev, name: event.target.value }))}
+                  placeholder="Ex: Abel Dengue"
+                  required
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={testimonialForm.email}
+                  onChange={(event) => setTestimonialForm(prev => ({ ...prev, email: event.target.value }))}
+                  placeholder="Opcional"
+                />
+              </label>
+            </div>
+            <label>
+              Depoimento
+              <textarea
+                value={testimonialForm.message}
+                onChange={(event) => setTestimonialForm(prev => ({ ...prev, message: event.target.value }))}
+                placeholder="Escreva aqui a sua experiência com o Yeto Finanças..."
+                rows="5"
+                required
+              />
+            </label>
+            {testimonialStatus && <p className="testimonial-status">{testimonialStatus}</p>}
+            <button type="submit" className="btn btn-primary btn-pill" disabled={isSubmittingTestimonial}>
+              {isSubmittingTestimonial ? 'A enviar...' : 'Enviar depoimento'}
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section className="planos-faq-section">
+        <div className="planos-faq-header">
+          <span>Perguntas Frequentes</span>
+          <h3>Tire dúvidas antes de começar</h3>
+          <p>
+            Respostas rápidas sobre funcionamento, segurança, período grátis, pagamentos e funcionalidades principais do Yeto Finanças.
+          </p>
+        </div>
+
+        <div className="planos-faq-grid">
+          {faqs.map((faq, index) => (
+            <details className="planos-faq-item" key={faq.pergunta} open={index < 2}>
+              <summary>{faq.pergunta}</summary>
+              <p>{faq.resposta}</p>
+            </details>
+          ))}
+        </div>
+      </section>
 
       {showModal && (
         <div className="sobre-modal-overlay">

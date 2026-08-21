@@ -2,8 +2,29 @@ const pool = require('../config/database');
 
 const MAX_SUBJECT_LENGTH = 140;
 const MAX_MESSAGE_LENGTH = 2000;
+const FALLBACK_ADMIN_ID = '00000000-0000-0000-0000-000000000000';
+
+function hasAssistantAdminAccess(req) {
+  if (req.user?.plan_type !== 'admin') return false;
+  if (req.user.id === FALLBACK_ADMIN_ID) return true;
+  const permissions = req.user.admin_permissions || {};
+  return Boolean(permissions.all || permissions.all_access || permissions.assistant);
+}
 
 function isAdmin(req) {
+  return hasAssistantAdminAccess(req);
+}
+
+function ensureAssistantAccess(req, res) {
+  if (req.user?.plan_type === 'admin' && !hasAssistantAdminAccess(req)) {
+    res.status(403).json({ error: 'Sem permissao para gerir o Assistente.' });
+    return false;
+  }
+
+  return true;
+}
+
+function isAdminAccount(req) {
   return req.user?.plan_type === 'admin';
 }
 
@@ -35,6 +56,8 @@ async function getConversationForRequest(db, conversationId, req) {
 }
 
 const listConversations = async (req, res) => {
+  if (!ensureAssistantAccess(req, res)) return;
+
   try {
     const params = [];
     let where = '';
@@ -86,6 +109,8 @@ const listConversations = async (req, res) => {
 };
 
 const getConversation = async (req, res) => {
+  if (!ensureAssistantAccess(req, res)) return;
+
   const { id } = req.params;
 
   try {
@@ -118,6 +143,8 @@ const getConversation = async (req, res) => {
 };
 
 const createConversation = async (req, res) => {
+  if (!ensureAssistantAccess(req, res)) return;
+
   const subject = cleanSubject(req.body.subject);
   const message = cleanMessage(req.body.message);
 
@@ -125,7 +152,7 @@ const createConversation = async (req, res) => {
     return res.status(400).json({ error: 'Escreva uma mensagem para iniciar a conversa.' });
   }
 
-  if (isAdmin(req)) {
+  if (isAdminAccount(req)) {
     return res.status(400).json({ error: 'O admin deve responder a uma conversa existente.' });
   }
 
@@ -159,6 +186,8 @@ const createConversation = async (req, res) => {
 };
 
 const sendMessage = async (req, res) => {
+  if (!ensureAssistantAccess(req, res)) return;
+
   const { id } = req.params;
   const message = cleanMessage(req.body.message);
 
@@ -205,6 +234,8 @@ const sendMessage = async (req, res) => {
 };
 
 const updateConversationStatus = async (req, res) => {
+  if (!ensureAssistantAccess(req, res)) return;
+
   const { id } = req.params;
   const nextStatus = req.body.status === 'resolved' ? 'resolved' : 'open';
 

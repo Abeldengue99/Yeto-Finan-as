@@ -24,6 +24,8 @@ const userRoutes = require('./routes/userRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const gamificationRoutes = require('./routes/gamificationRoutes');
 const assistantRoutes = require('./routes/assistantRoutes');
+const syncRoutes = require('./routes/syncRoutes');
+const testimonialRoutes = require('./routes/testimonialRoutes');
 
 app.disable('x-powered-by');
 app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
@@ -42,6 +44,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/gamification', gamificationRoutes);
 app.use('/api/assistant', assistantRoutes);
+app.use('/api/sync', syncRoutes);
+app.use('/api/testimonials', testimonialRoutes);
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Yeto Financas API ativa.' });

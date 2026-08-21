@@ -22,12 +22,26 @@ function getAllowedOrigins() {
     .filter(Boolean);
 }
 
+function isLocalNetworkDevOrigin(origin) {
+  if (process.env.NODE_ENV === 'production') return false;
+
+  try {
+    const { protocol, hostname, port } = new URL(origin);
+    const allowedDevPorts = new Set(['5173', '5174', '4173', '4174']);
+    const isLanHost = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(hostname);
+
+    return ['http:', 'https:'].includes(protocol) && allowedDevPorts.has(port) && isLanHost;
+  } catch (error) {
+    return false;
+  }
+}
+
 const corsOptions = {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
 
     const allowedOrigins = getAllowedOrigins();
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || isLocalNetworkDevOrigin(origin)) {
       return callback(null, true);
     }
 

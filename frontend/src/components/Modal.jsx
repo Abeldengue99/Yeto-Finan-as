@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Modal({ isOpen, onClose, title, children }) {
+export default function Modal({ isOpen, onClose, title, children, maxWidth = '450px', className = '' }) {
   if (!isOpen) return null;
 
   return (
@@ -16,12 +16,12 @@ export default function Modal({ isOpen, onClose, title, children }) {
         padding: '1.5rem',
         borderRadius: '20px',
         width: '100%',
-        maxWidth: '450px',
+        maxWidth,
         maxHeight: 'calc(100vh - 2rem)',
         overflowY: 'auto',
         boxSizing: 'border-box',
         boxShadow: '0 15px 50px rgba(55, 51, 146, 0.2)'
-      }}>
+      }} className={className}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>{title}</h2>
           <button 

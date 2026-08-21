@@ -96,12 +96,12 @@ export default function Transacoes() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div className="transactions-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)' }}>Gestão de Transações</h2>
           <p className="text-secondary">Registe aqui todos os salários, bónus e despesas da casa.</p>
         </div>
-        <div style={{ display: 'flex', gap: '1rem' }}>
+        <div className="transactions-page-actions" style={{ display: 'flex', gap: '1rem' }}>
           <button className="btn btn-pill" onClick={handleExportPdf} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
           <button className="btn btn-glass btn-pill" onClick={() => setIsCategoriaModalOpen(true)}>Gestão de Categorias</button>
           <button className="btn btn-primary btn-pill" onClick={openNewModal}>+ Novo Registo</button>
@@ -126,7 +126,8 @@ export default function Transacoes() {
             </select>
           </div>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <div className="responsive-table-wrap">
+        <table className="transactions-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)' }}>
               <th style={{ padding: '1rem 0' }}>Descrição</th>
@@ -169,6 +170,7 @@ export default function Transacoes() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <ConfirmDeleteModal 

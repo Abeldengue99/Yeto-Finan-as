@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { useFinance } from '../../contexts/FinanceContext';
 import { apiFetch } from '../../utils/api';
@@ -16,6 +16,49 @@ export default function AdminSettings() {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailContent, setEmailContent] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [testimonials, setTestimonials] = useState([]);
+  const [isLoadingTestimonials, setIsLoadingTestimonials] = useState(false);
+  const [testimonialActionId, setTestimonialActionId] = useState('');
+  const [testimonialError, setTestimonialError] = useState('');
+
+  const loadTestimonials = async () => {
+    setIsLoadingTestimonials(true);
+    setTestimonialError('');
+    try {
+      const response = await apiFetch('/api/admin/testimonials');
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao carregar depoimentos.');
+      setTestimonials(Array.isArray(data.testimonials) ? data.testimonials : []);
+    } catch (error) {
+      setTestimonialError(error.message || 'Erro ao carregar depoimentos.');
+    } finally {
+      setIsLoadingTestimonials(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTestimonials();
+  }, []);
+
+  const handleTestimonialReview = async (testimonialId, action) => {
+    setTestimonialActionId(`${testimonialId}-${action}`);
+    setTestimonialError('');
+    try {
+      const response = await apiFetch(`/api/admin/testimonials/${testimonialId}/${action}`, {
+        method: 'PUT'
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Erro ao moderar depoimento.');
+
+      adicionarNotificacao('Depoimentos', data.message || 'Depoimento atualizado.');
+      addLog(data.message || 'Depoimento moderado.', action === 'approve' ? 'success' : 'warning');
+      await loadTestimonials();
+    } catch (error) {
+      setTestimonialError(error.message || 'Erro ao moderar depoimento.');
+    } finally {
+      setTestimonialActionId('');
+    }
+  };
 
   const handlePriceUpdate = (e) => {
     e.preventDefault();
@@ -83,6 +126,14 @@ export default function AdminSettings() {
       }
     }
   };
+
+  const testimonialStatusLabels = {
+    pending: 'Pendente',
+    approved: 'Aprovado',
+    rejected: 'Rejeitado'
+  };
+
+  const pendingTestimonials = testimonials.filter(item => item.status === 'pending').length;
 
 
   return (
@@ -199,6 +250,102 @@ export default function AdminSettings() {
               📢 Guardar e Aplicar Configuração do Banner
             </button>
           </form>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '2rem', marginTop: '2rem' }}>
+        <div className="dash-card" style={{ borderLeft: '4px solid #ffb300' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', marginBottom: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <h3 className="section-title">Depoimentos dos Utilizadores</h3>
+              <p className="text-secondary" style={{ fontSize: '0.9rem', margin: 0 }}>
+                Aprove apenas os depoimentos que podem aparecer publicamente na tela Como funciona e Planos.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-glass"
+              onClick={loadTestimonials}
+              disabled={isLoadingTestimonials}
+              style={{ padding: '0.75rem 1rem', borderRadius: '12px', fontWeight: 700 }}
+            >
+              {isLoadingTestimonials ? 'A atualizar...' : 'Atualizar'}
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ background: 'var(--bg-primary)', borderRadius: '14px', padding: '1rem' }}>
+              <strong style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Pendentes</strong>
+              <span style={{ fontSize: '2rem', fontWeight: 900, color: '#ffb300' }}>{pendingTestimonials}</span>
+            </div>
+            <div style={{ background: 'var(--bg-primary)', borderRadius: '14px', padding: '1rem' }}>
+              <strong style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Aprovados</strong>
+              <span style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--success-color)' }}>{testimonials.filter(item => item.status === 'approved').length}</span>
+            </div>
+            <div style={{ background: 'var(--bg-primary)', borderRadius: '14px', padding: '1rem' }}>
+              <strong style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Rejeitados</strong>
+              <span style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--danger-color)' }}>{testimonials.filter(item => item.status === 'rejected').length}</span>
+            </div>
+          </div>
+
+          {testimonialError && (
+            <div style={{ background: '#fff0f0', border: '1px solid #ffc7c7', color: '#ef4444', padding: '1rem', borderRadius: '14px', fontWeight: 700, marginBottom: '1rem' }}>
+              {testimonialError}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            {testimonials.length === 0 && (
+              <div style={{ background: 'var(--bg-primary)', borderRadius: '16px', padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                Ainda nao existem depoimentos para moderar.
+              </div>
+            )}
+
+            {testimonials.map(item => (
+              <div key={item.id} style={{ border: '1px solid var(--glass-border)', borderRadius: '16px', padding: '1rem', background: 'rgba(255,255,255,0.75)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div>
+                    <strong style={{ color: 'var(--text-primary)', fontSize: '1.05rem' }}>{item.submitter_name}</strong>
+                    <p style={{ margin: '0.2rem 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{item.submitter_email || 'Email nao informado'}</p>
+                  </div>
+                  <span style={{ background: item.status === 'approved' ? '#dcfce7' : item.status === 'rejected' ? '#fee2e2' : '#fff7d6', color: item.status === 'approved' ? '#059669' : item.status === 'rejected' ? '#ef4444' : '#a86f00', padding: '0.35rem 0.75rem', borderRadius: '999px', fontWeight: 800 }}>
+                    {testimonialStatusLabels[item.status] || item.status}
+                  </span>
+                </div>
+
+                <p style={{ margin: '1rem 0', color: 'var(--text-primary)', lineHeight: 1.6 }}>
+                  {item.message}
+                </p>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <small style={{ color: 'var(--text-secondary)' }}>
+                    Enviado em {item.created_at ? new Date(item.created_at).toLocaleDateString('pt-AO') : '-'}
+                    {item.reviewed_by_name ? ` | Revisto por ${item.reviewed_by_name}` : ''}
+                  </small>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={item.status === 'approved' || testimonialActionId === `${item.id}-approve`}
+                      onClick={() => handleTestimonialReview(item.id, 'approve')}
+                      style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '12px', padding: '0.7rem 1rem', fontWeight: 800, opacity: item.status === 'approved' ? 0.55 : 1 }}
+                    >
+                      {testimonialActionId === `${item.id}-approve` ? 'A aprovar...' : 'Aprovar'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={item.status === 'rejected' || testimonialActionId === `${item.id}-reject`}
+                      onClick={() => handleTestimonialReview(item.id, 'reject')}
+                      style={{ background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '12px', padding: '0.7rem 1rem', fontWeight: 800, opacity: item.status === 'rejected' ? 0.55 : 1 }}
+                    >
+                      {testimonialActionId === `${item.id}-reject` ? 'A rejeitar...' : 'Rejeitar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
