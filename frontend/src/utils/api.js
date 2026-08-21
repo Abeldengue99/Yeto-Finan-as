@@ -1,7 +1,7 @@
 const configuredApiUrl = import.meta.env?.VITE_API_URL?.trim();
 
 function getDefaultApiUrl() {
-  if (typeof window === 'undefined') return 'http://localhost:5000';
+  if (typeof window === 'undefined') return '';
 
   const { protocol, hostname } = window.location;
   const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
@@ -10,12 +10,18 @@ function getDefaultApiUrl() {
     return 'http://localhost:5000';
   }
 
-  return `${protocol === 'https:' ? 'https:' : 'http:'}//${hostname}:5000`;
+  return '';
+}
+
+function normalizeApiBaseUrl(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized || normalized === '/' || normalized === 'same-origin' || normalized === 'self') return '';
+  return normalized.replace(/\/+$/, '');
 }
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const API_BASE_URL = (configuredApiUrl || getDefaultApiUrl()).replace(/\/+$/, '');
+export const API_BASE_URL = normalizeApiBaseUrl(configuredApiUrl || getDefaultApiUrl());
 export const API_OFFLINE_MESSAGE = 'Servidor temporariamente indisponível. Tente novamente em alguns segundos.';
 
 export function getStoredUser() {
@@ -47,7 +53,10 @@ export function clearSession() {
 }
 
 export async function apiFetch(path, options = {}) {
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+  const normalizedPath = API_BASE_URL.endsWith('/api') && path.startsWith('/api/')
+    ? path.slice(4)
+    : path;
+  const url = path.startsWith('http') ? path : `${API_BASE_URL}${normalizedPath}`;
   const headers = new Headers(options.headers || {});
   const token = getAuthToken();
 
