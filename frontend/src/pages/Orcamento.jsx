@@ -44,13 +44,14 @@ export default function Orcamento() {
   const [monthlyLimit, setMonthlyLimit] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const loadedMonthRef = useRef('');
+  const hasBudgetAccess = usuario?.isPremium || usuario?.featureAccess?.includes('orcamento');
 
   useEffect(() => {
-    if (!usuario?.isPremium || loadedMonthRef.current === selectedMonth) return;
+    if (!hasBudgetAccess || loadedMonthRef.current === selectedMonth) return;
 
     loadedMonthRef.current = selectedMonth;
     carregarOrcamentos(selectedMonth);
-  }, [selectedMonth, usuario?.isPremium, carregarOrcamentos]);
+  }, [selectedMonth, hasBudgetAccess, carregarOrcamentos]);
 
   useEffect(() => {
     if (!selectedCategory && categoriasSaidas.length > 0) {
@@ -164,12 +165,12 @@ export default function Orcamento() {
     setMonthlyLimit(String(row.limit || ''));
   };
 
-  if (!usuario?.isPremium) {
+  if (!hasBudgetAccess) {
     return (
       <div className="budget-page">
         <div className="budget-locked dash-card">
           <span className="budget-lock-icon">P</span>
-          <h2>Orçamento Familiar</h2>
+          <h2>Orçamento Mensal</h2>
           <p className="text-secondary">
             Esta funcionalidade está disponível durante o mês grátis e nos planos Premium.
             Renove o plano para voltar a controlar limites por categoria.
@@ -184,7 +185,7 @@ export default function Orcamento() {
       <div className="budget-header">
         <div>
           <span className="budget-kicker">Planeamento mensal</span>
-          <h2>Orçamento Familiar</h2>
+          <h2>Orçamento Mensal</h2>
           <p className="text-secondary">
             Defina limites por categoria e acompanhe em tempo real o que a família já consumiu.
           </p>

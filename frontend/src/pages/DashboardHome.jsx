@@ -92,11 +92,14 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
   const despesasMes = despesas.filter(d => d.data && d.data.startsWith(mesAnoStr)).reduce((a, b) => a + b.valor, 0);
   const receitasMes = receitas.filter(r => r.data && r.data.startsWith(mesAnoStr)).reduce((a, b) => a + b.valor, 0);
 
+  const hasPdfAccess = usuario?.isPremium || isAdmin || usuario?.featureAccess?.includes('relatorios_pdf');
+  const hasAiAccess = usuario?.isPremium || isAdmin || usuario?.featureAccess?.includes('yeto_ai');
+
   const handleGeneratePDF = () => {
-    if (!usuario?.isPremium && !isAdmin) {
+    if (!hasPdfAccess) {
       mostrarAlerta(
         'Funcionalidade Premium',
-        'Este recurso é exclusivo para assinantes Premium. Aceda ao menu Planos para obter relatórios profissionais.',
+        'Este recurso é exclusivo para assinantes Premium ou planos com Relatórios PDF. Aceda ao menu Planos para obter relatórios profissionais.',
         'aviso',
         false
       );
@@ -130,7 +133,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
     let conselhos = [];
 
     // --- Análise de Admin (Apenas se for Admin) ---
-    if (isAdmin && adminData) {
+    if (isAdmin && adminData && typeof adminData.getStats === 'function') {
       const stats = adminData.getStats();
       const numUsers = stats.totalUsers || 0;
       const numPremium = stats.premiumUsers || 0;
@@ -204,7 +207,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
       rotativos.push(`💳 Alerta Vermelho: Dívidas superam o dinheiro disponível. Priorize o pagamento.`);
       maus.push(`Passivo superior ao Ativo: As dívidas (Kz ${totalAPagar.toLocaleString()}) engoliram a sua liquidez.`);
       conselhos.push("Priorize renegociar as dívidas mais tóxicas. Use o Método Bola de Neve para motivação rápida.");
-    } else if (totalAPagar > 0 && (totalAPagar / saldoTotal) > 0.4) {
+    } else if (totalAPagar > 0 && saldoTotal > 0 && (totalAPagar / saldoTotal) > 0.4) {
       rotativos.push(`📊 Cuidado: 40% do capital disponível seria engolido pelas dívidas.`);
       maus.push(`Endividamento desconfortável: mais de 40% da liquidez está comprometida.`);
     }
@@ -226,8 +229,8 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
 
     const projetosEmAndamento = projetos.filter(p => p.valorGuardado < p.objetivo);
     if (projetosEmAndamento.length > 0) {
-      const projetoMaisProximo = projetosEmAndamento.sort((a, b) => (b.valorGuardado/b.objetivo) - (a.valorGuardado/a.objetivo))[0];
-      const percentagem = ((projetoMaisProximo.valorGuardado / projetoMaisProximo.objetivo) * 100).toFixed(1);
+      const projetoMaisProximo = projetosEmAndamento.sort((a, b) => (b.valorGuardado/(b.objetivo||1)) - (a.valorGuardado/(a.objetivo||1)))[0];
+      const percentagem = ((projetoMaisProximo.valorGuardado / (projetoMaisProximo.objetivo||1)) * 100).toFixed(1);
       
       if (percentagem > 80) {
         rotativos.push(`🎯 O projeto "${projetoMaisProximo.nome}" está a ${percentagem}%! Falta pouco.`);
@@ -281,7 +284,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
     <>
       {/* Yeto AI Smart Card */}
       <div className="yeto-ai-card">
-        {!usuario?.isPremium && (
+        {!hasAiAccess && (
           <div style={{
             position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
             background: 'rgba(28, 28, 30, 0.9)', zIndex: 10,
@@ -327,7 +330,7 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
             className="btn btn-glass" 
             onClick={() => setShowAIModal(true)}
             style={{ padding: '0.8rem 1.5rem', fontWeight: 'bold', border: '1px solid #ffb300', color: '#ffb300' }}
-            disabled={!usuario?.isPremium && !isAdmin}
+            disabled={!hasAiAccess}
           >
             Ver Análise Profunda
           </button>
@@ -410,18 +413,18 @@ export default function DashboardHome({ isAdmin, setActiveTab }) {
           className="btn btn-pill" 
           style={{ 
             display: 'flex', alignItems: 'center', gap: '0.8rem', 
-            background: usuario?.isPremium || isAdmin ? 'var(--accent-color)' : '#e0e0e0', 
-            color: usuario?.isPremium || isAdmin ? '#fff' : '#888', 
+            background: hasPdfAccess ? 'var(--accent-color)' : '#e0e0e0', 
+            color: hasPdfAccess ? '#fff' : '#888', 
             border: 'none',
-            boxShadow: usuario?.isPremium || isAdmin ? '0 10px 20px rgba(55,51,146,0.3)' : 'none',
+            boxShadow: hasPdfAccess ? '0 10px 20px rgba(55,51,146,0.3)' : 'none',
             padding: '0.8rem 1.5rem',
             fontWeight: 'bold',
             transition: 'all 0.3s'
           }}
         >
           <span>📄</span> 
-          {usuario?.isPremium || isAdmin ? 'Baixar Relatório Financeiro (PDF)' : 'Relatório PDF (Apenas Premium)'}
-          {!(usuario?.isPremium || isAdmin) && <span>🔒</span>}
+          {hasPdfAccess ? 'Baixar Relatório Financeiro (PDF)' : 'Relatório PDF (Apenas Premium)'}
+          {!hasPdfAccess && <span>🔒</span>}
         </button>
       </div>
 

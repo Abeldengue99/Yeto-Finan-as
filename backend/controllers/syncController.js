@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 const financeController = require('./financeController');
-const { hasActivePlanAccess } = require('../middleware/auth');
+const { hasActivePlanAccess, hasFeatureAccess } = require('../middleware/auth');
 
 const MAX_SYNC_CHANGES = Number(process.env.SYNC_BATCH_LIMIT || 100);
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -35,26 +35,26 @@ const ALLOWED_ROUTES = [
   buildRoute('DELETE', new RegExp(`^/api/finances/fixed-payment/(${UUID_PATTERN})$`, 'i'), financeController.deleteFixedPayment, { resource: 'fixed-payment', table: 'fixed_payments', params: ['id'] }),
   buildRoute('PUT', new RegExp(`^/api/finances/fixed-payment/(${UUID_PATTERN})/pay$`, 'i'), financeController.payFixedPayment, { resource: 'fixed-payment-pay', table: 'fixed_payments', params: ['id'] }),
 
-  buildRoute('POST', /^\/api\/finances\/budget$/, financeController.upsertBudget, { resource: 'budget', table: 'budgets', premium: true }),
-  buildRoute('DELETE', new RegExp(`^/api/finances/budget/(${UUID_PATTERN})$`, 'i'), financeController.deleteBudget, { resource: 'budget', table: 'budgets', params: ['id'], premium: true }),
+  buildRoute('POST', /^\/api\/finances\/budget$/, financeController.upsertBudget, { resource: 'budget', table: 'budgets', feature: 'orcamento' }),
+  buildRoute('DELETE', new RegExp(`^/api/finances/budget/(${UUID_PATTERN})$`, 'i'), financeController.deleteBudget, { resource: 'budget', table: 'budgets', params: ['id'], feature: 'orcamento' }),
 
-  buildRoute('POST', /^\/api\/finances\/shopping-list$/, financeController.createShoppingList, { resource: 'shopping-list', table: 'shopping_lists', premium: true }),
-  buildRoute('DELETE', new RegExp(`^/api/finances/shopping-list/(${UUID_PATTERN})$`, 'i'), financeController.deleteShoppingList, { resource: 'shopping-list', table: 'shopping_lists', params: ['id'], premium: true }),
-  buildRoute('POST', new RegExp(`^/api/finances/shopping-list/(${UUID_PATTERN})/item$`, 'i'), financeController.addShoppingListItem, { resource: 'shopping-list-item', table: 'shopping_list_items', params: ['listId'], premium: true }),
-  buildRoute('PUT', new RegExp(`^/api/finances/shopping-list-item/(${UUID_PATTERN})$`, 'i'), financeController.updateShoppingListItem, { resource: 'shopping-list-item', table: 'shopping_list_items', params: ['id'], premium: true }),
-  buildRoute('DELETE', new RegExp(`^/api/finances/shopping-list-item/(${UUID_PATTERN})$`, 'i'), financeController.deleteShoppingListItem, { resource: 'shopping-list-item', table: 'shopping_list_items', params: ['id'], premium: true }),
+  buildRoute('POST', /^\/api\/finances\/shopping-list$/, financeController.createShoppingList, { resource: 'shopping-list', table: 'shopping_lists', feature: 'lista_compras' }),
+  buildRoute('DELETE', new RegExp(`^/api/finances/shopping-list/(${UUID_PATTERN})$`, 'i'), financeController.deleteShoppingList, { resource: 'shopping-list', table: 'shopping_lists', params: ['id'], feature: 'lista_compras' }),
+  buildRoute('POST', new RegExp(`^/api/finances/shopping-list/(${UUID_PATTERN})/item$`, 'i'), financeController.addShoppingListItem, { resource: 'shopping-list-item', table: 'shopping_list_items', params: ['listId'], feature: 'lista_compras' }),
+  buildRoute('PUT', new RegExp(`^/api/finances/shopping-list-item/(${UUID_PATTERN})$`, 'i'), financeController.updateShoppingListItem, { resource: 'shopping-list-item', table: 'shopping_list_items', params: ['id'], feature: 'lista_compras' }),
+  buildRoute('DELETE', new RegExp(`^/api/finances/shopping-list-item/(${UUID_PATTERN})$`, 'i'), financeController.deleteShoppingListItem, { resource: 'shopping-list-item', table: 'shopping_list_items', params: ['id'], feature: 'lista_compras' }),
 
-  buildRoute('POST', /^\/api\/finances\/project$/, financeController.createProject, { resource: 'project', table: 'projects', premium: true }),
-  buildRoute('PUT', new RegExp(`^/api/finances/project/(${UUID_PATTERN})$`, 'i'), financeController.updateProject, { resource: 'project', table: 'projects', params: ['id'], premium: true }),
-  buildRoute('DELETE', new RegExp(`^/api/finances/project/(${UUID_PATTERN})$`, 'i'), financeController.deleteProject, { resource: 'project', table: 'projects', params: ['id'], premium: true }),
-  buildRoute('PUT', new RegExp(`^/api/finances/project/(${UUID_PATTERN})/fund$`, 'i'), financeController.fundProject, { resource: 'project-fund', table: 'projects', params: ['id'], premium: true }),
+  buildRoute('POST', /^\/api\/finances\/project$/, financeController.createProject, { resource: 'project', table: 'projects', feature: 'projetos' }),
+  buildRoute('PUT', new RegExp(`^/api/finances/project/(${UUID_PATTERN})$`, 'i'), financeController.updateProject, { resource: 'project', table: 'projects', params: ['id'], feature: 'projetos' }),
+  buildRoute('DELETE', new RegExp(`^/api/finances/project/(${UUID_PATTERN})$`, 'i'), financeController.deleteProject, { resource: 'project', table: 'projects', params: ['id'], feature: 'projetos' }),
+  buildRoute('PUT', new RegExp(`^/api/finances/project/(${UUID_PATTERN})/fund$`, 'i'), financeController.fundProject, { resource: 'project-fund', table: 'projects', params: ['id'], feature: 'projetos' }),
 
-  buildRoute('POST', /^\/api\/finances\/kixikila$/, financeController.createKixikila, { resource: 'kixikila', table: 'kixikila_groups', premium: true }),
-  buildRoute('PUT', new RegExp(`^/api/finances/kixikila/(${UUID_PATTERN})$`, 'i'), financeController.updateKixikila, { resource: 'kixikila', table: 'kixikila_groups', params: ['id'], premium: true }),
-  buildRoute('DELETE', new RegExp(`^/api/finances/kixikila/(${UUID_PATTERN})$`, 'i'), financeController.deleteKixikila, { resource: 'kixikila', table: 'kixikila_groups', params: ['id'], premium: true }),
-  buildRoute('PUT', new RegExp(`^/api/finances/kixikila/(${UUID_PATTERN})/pay$`, 'i'), financeController.receiveKixikilaHand, { resource: 'kixikila-pay', table: 'kixikila_groups', params: ['id'], premium: true }),
+  buildRoute('POST', /^\/api\/finances\/kixikila$/, financeController.createKixikila, { resource: 'kixikila', table: 'kixikila_groups', feature: 'kixikila' }),
+  buildRoute('PUT', new RegExp(`^/api/finances/kixikila/(${UUID_PATTERN})$`, 'i'), financeController.updateKixikila, { resource: 'kixikila', table: 'kixikila_groups', params: ['id'], feature: 'kixikila' }),
+  buildRoute('DELETE', new RegExp(`^/api/finances/kixikila/(${UUID_PATTERN})$`, 'i'), financeController.deleteKixikila, { resource: 'kixikila', table: 'kixikila_groups', params: ['id'], feature: 'kixikila' }),
+  buildRoute('PUT', new RegExp(`^/api/finances/kixikila/(${UUID_PATTERN})/pay$`, 'i'), financeController.receiveKixikilaHand, { resource: 'kixikila-pay', table: 'kixikila_groups', params: ['id'], feature: 'kixikila' }),
 
-  buildRoute('POST', /^\/api\/finances\/currency$/, financeController.createForeignCurrency, { resource: 'currency', table: 'foreign_currency', premium: true })
+  buildRoute('POST', /^\/api\/finances\/currency$/, financeController.createForeignCurrency, { resource: 'currency', table: 'foreign_currency', feature: 'divisas' })
 ];
 
 function normalizePath(path) {
@@ -190,6 +190,10 @@ async function executeChange({ req, operation, deviceId, idMap }) {
   const path = normalizePath(resolvePath(operation.path, idMap));
   const body = replaceOfflineRefs(operation.body || {}, idMap);
   const route = matchRoute(method, path);
+
+  if (route.feature && !(await hasFeatureAccess(req.user, route.feature))) {
+    throw new SyncHttpError(402, 'Esta funcionalidade não está incluída no plano atual.');
+  }
 
   if (route.premium && !hasActivePlanAccess(req.user)) {
     throw new SyncHttpError(402, 'O plano expirou. Renove para sincronizar esta funcionalidade Premium.');

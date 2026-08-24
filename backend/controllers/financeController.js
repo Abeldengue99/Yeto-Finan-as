@@ -1,5 +1,12 @@
 const pool = require('../config/database');
 const { getAdminPermissionsForUser, hasFullAdminAccess } = require('../middleware/auth');
+const {
+  calculateCustomPlanAmount,
+  ensureFeatureAccessSchema,
+  getActiveFeatureKeys,
+  normalizeDurationMonths,
+  normalizeFeatureKeys
+} = require('../services/featureAccessService');
 const { consumeUserNotifications } = require('../services/notificationService');
 
 const OWNED_TABLES = new Set([
@@ -265,6 +272,7 @@ const getUserFinances = async (req, res) => {
     }
 
     user.admin_permissions = await getAdminPermissionsForUser(user);
+    user.custom_features = await getActiveFeatureKeys(user.id);
 
     if (user.plan_type === 'free' && !user.plan_expires_at && user.created_at) {
       const expiryResult = await pool.query(
@@ -1556,17 +1564,53 @@ const fundProject = async (req, res) => {
 
 
 const uploadPaymentProof = async (req, res) => {
-  let { userId, proofImage, planRequested } = req.body;
+  let { userId, proofImage, planRequested, selectedFeatures, customDurationMonths } = req.body;
   userId = getRequestUserId(req, userId);
   try {
     if (!userId || !proofImage) {
       return res.status(400).json({ error: 'Faltam dados do comprovativo.' });
     }
 
-    const normalizedPlan = planRequested === 'semestral' ? 'semestral' : 'anual';
+    await ensureFeatureAccessSchema();
+
+    const normalizedPlan = planRequested === 'personalizado'
+      ? 'personalizado'
+      : planRequested === 'semestral'
+        ? 'semestral'
+        : 'anual';
+    const normalizedFeatures = normalizedPlan === 'personalizado' ? normalizeFeatureKeys(selectedFeatures) : [];
+    const normalizedDuration = normalizedPlan === 'personalizado' ? normalizeDurationMonths(customDurationMonths) : 0;
+    const customAmount = normalizedPlan === 'personalizado'
+      ? calculateCustomPlanAmount(normalizedFeatures, normalizedDuration)
+      : 0;
+
+    if (normalizedPlan === 'personalizado' && normalizedFeatures.length === 0) {
+      return res.status(400).json({ error: 'Escolha pelo menos uma funcionalidade para o plano personalizado.' });
+    }
+
     const result = await pool.query(
-      'INSERT INTO payment_approvals (user_id, plan_requested, proof_image, status, notified_user) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [userId, normalizedPlan, proofImage, 'pending', false]
+      `INSERT INTO payment_approvals (
+        user_id,
+        plan_requested,
+        proof_image,
+        status,
+        notified_user,
+        selected_features,
+        custom_amount,
+        custom_duration_months
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+      RETURNING *`,
+      [
+        userId,
+        normalizedPlan,
+        proofImage,
+        'pending',
+        false,
+        JSON.stringify(normalizedFeatures),
+        customAmount,
+        normalizedDuration
+      ]
     );
     res.status(201).json({ message: 'Comprovativo enviado com sucesso.', proof: result.rows[0] });
   } catch (err) {
@@ -1580,7 +1624,8 @@ const getPaymentStatus = async (req, res) => {
   try {
     // Busca pagamentos aprovados ou rejeitados que ainda não foram notificados
     const result = await pool.query(
-      `SELECT id, status, submitted_at, rejection_reason FROM payment_approvals
+      `SELECT id, status, submitted_at, rejection_reason, plan_requested, selected_features
+       FROM payment_approvals
        WHERE user_id = $1 AND status IN ('approved', 'rejected') AND notified_user = false`,
       [userId]
     );

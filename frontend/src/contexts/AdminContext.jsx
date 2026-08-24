@@ -8,7 +8,7 @@ export function useAdmin() {
 }
 
 function mapAdminUser(user) {
-  const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin' };
+  const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin', custom: 'Personalizado' };
 
   return {
     id: user.id,
@@ -60,6 +60,8 @@ export function AdminProvider({ children, isAdmin = false }) {
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
+    adminUsers: 0,
+    regularUsers: 0,
     premiumUsers: 0,
     pendingApprovals: 0,
     mrr: 0,
@@ -93,6 +95,8 @@ export function AdminProvider({ children, isAdmin = false }) {
         const data = await statsRes.json();
         setStats({
           totalUsers: data.totalUsers || 0,
+          adminUsers: data.adminUsers || 0,
+          regularUsers: data.regularUsers || 0,
           premiumUsers: data.activeSubscriptions || 0,
           pendingApprovals: data.pendingApprovals || 0,
           mrr: data.monthlyRevenue || 0,
@@ -111,7 +115,7 @@ export function AdminProvider({ children, isAdmin = false }) {
       if (usersRes.ok) {
         const data = await usersRes.json();
         loadedUsers = data;
-        const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin' };
+        const planMap = { premium: 'Premium', free: 'Grátis', admin: 'Admin', custom: 'Personalizado' };
         void planMap;
         setUsers(data.map(mapAdminUser));
       }
@@ -119,7 +123,11 @@ export function AdminProvider({ children, isAdmin = false }) {
       if (paymentsRes.ok) {
         const data = await paymentsRes.json();
         const mappedPayments = data.map(payment => {
-          const plano = payment.plan_requested === 'semestral' ? 'semestral' : 'anual';
+          const plano = payment.plan_requested === 'personalizado'
+            ? 'personalizado'
+            : payment.plan_requested === 'semestral'
+              ? 'semestral'
+              : 'anual';
           return {
             id: payment.id,
             userId: payment.user_id,
@@ -127,7 +135,13 @@ export function AdminProvider({ children, isAdmin = false }) {
             email: payment.user_email,
             banco: 'Comprovativo enviado',
             plano,
-            valor: plano === 'semestral' ? planPrices.semestral : planPrices.anual,
+            valor: plano === 'personalizado'
+              ? Number(payment.custom_amount || 0)
+              : plano === 'semestral'
+                ? planPrices.semestral
+                : planPrices.anual,
+            selectedFeatures: Array.isArray(payment.selected_features) ? payment.selected_features : [],
+            customDurationMonths: Number(payment.custom_duration_months || 0),
             status: payment.status || 'pending',
             motivoRejeicao: payment.rejection_reason || '',
             aprovadoPor: payment.approved_by_name || '',

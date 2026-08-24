@@ -2,6 +2,13 @@ const pool = require('../config/database');
 const { sendMassPromotion, sendPaymentApproved, sendVerificationCode } = require('../services/emailService');
 const { createUserNotification } = require('../services/notificationService');
 const { ensureGamificationSchema } = require('../services/gamificationService');
+const {
+  ensureFeatureAccessSchema,
+  getActiveFeatureKeys,
+  grantFeatureAccess,
+  normalizeDurationMonths,
+  normalizeFeatureKeys
+} = require('../services/featureAccessService');
 
 const FALLBACK_ADMIN_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -64,6 +71,7 @@ const ensurePaymentReviewFields = async (db = pool) => {
   if (paymentReviewFieldsReady) return;
 
   await db.query('ALTER TABLE payment_approvals ADD COLUMN IF NOT EXISTS rejection_reason TEXT');
+  await ensureFeatureAccessSchema(db);
   paymentReviewFieldsReady = true;
 };
 
@@ -112,9 +120,11 @@ const getDashboardStats = async (req, res) => {
   try {
     const usersStatsRes = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE plan_type != 'admin')::int AS total_users,
+        COUNT(*)::int AS total_users,
+        COUNT(*) FILTER (WHERE plan_type = 'admin')::int AS admin_users,
+        COUNT(*) FILTER (WHERE plan_type != 'admin')::int AS regular_users,
         COUNT(*) FILTER (
-          WHERE plan_type = 'premium'
+          WHERE plan_type IN ('premium', 'custom')
             AND (plan_expires_at IS NULL OR plan_expires_at > NOW())
         )::int AS active_subscriptions,
         COUNT(*) FILTER (WHERE status = 'blocked')::int AS blocked_users,
@@ -130,20 +140,16 @@ const getDashboardStats = async (req, res) => {
             AND plan_expires_at <= NOW() + INTERVAL '7 days'
         )::int AS expiring_soon,
         COUNT(*) FILTER (
-          WHERE plan_type != 'admin'
-            AND created_at >= NOW() - INTERVAL '7 days'
+          WHERE created_at >= NOW() - INTERVAL '7 days'
         )::int AS new_users_7d,
         COUNT(*) FILTER (
-          WHERE plan_type != 'admin'
-            AND created_at >= CURRENT_DATE
+          WHERE created_at >= CURRENT_DATE
         )::int AS new_users_today,
         COUNT(*) FILTER (
-          WHERE plan_type != 'admin'
-            AND email_verified IS TRUE
+          WHERE email_verified IS TRUE
         )::int AS verified_users,
         COUNT(*) FILTER (
-          WHERE plan_type != 'admin'
-            AND COALESCE(email_verified, FALSE) = FALSE
+          WHERE COALESCE(email_verified, FALSE) = FALSE
         )::int AS unverified_users
       FROM users
     `);
@@ -168,12 +174,15 @@ const getDashboardStats = async (req, res) => {
     const mrrRes = await pool.query("SELECT value FROM system_settings WHERE key = 'premium_price'");
     const premiumPrice = mrrRes.rows.length > 0 ? Number(mrrRes.rows[0].value) : 5999;
     const totalUsers = Number(userStats.total_users || 0);
+    const regularUsers = Number(userStats.regular_users || 0);
     const activeSubscriptions = Number(userStats.active_subscriptions || 0);
     const monthlyRevenue = activeSubscriptions * premiumPrice;
-    const conversionRate = totalUsers > 0 ? Number(((activeSubscriptions / totalUsers) * 100).toFixed(1)) : 0;
+    const conversionRate = regularUsers > 0 ? Number(((activeSubscriptions / regularUsers) * 100).toFixed(1)) : 0;
 
     res.json({
       totalUsers,
+      adminUsers: Number(userStats.admin_users || 0),
+      regularUsers,
       pendingApprovals,
       activeSubscriptions,
       monthlyRevenue,
@@ -615,6 +624,9 @@ const getPendingPayments = async (req, res) => {
         p.id,
         p.user_id,
         p.plan_requested,
+        p.selected_features,
+        p.custom_amount,
+        p.custom_duration_months,
         p.proof_image,
         p.status,
         p.rejection_reason,
@@ -644,6 +656,9 @@ const getPayments = async (req, res) => {
         p.id,
         p.user_id,
         p.plan_requested,
+        p.selected_features,
+        p.custom_amount,
+        p.custom_duration_months,
         p.proof_image,
         p.status,
         p.rejection_reason,
@@ -949,39 +964,94 @@ const approvePayment = async (req, res) => {
       return res.status(400).json({ error: 'Pagamento já processado.' });
     }
 
-    const requestedPlan = payment.plan_requested === 'semestral' ? 'semestral' : 'anual';
-    const monthsToAdd = requestedPlan === 'semestral' ? 6 : 12;
+    const requestedPlan = payment.plan_requested === 'personalizado'
+      ? 'personalizado'
+      : payment.plan_requested === 'semestral'
+        ? 'semestral'
+        : 'anual';
+    const selectedFeatures = normalizeFeatureKeys(payment.selected_features || []);
+    const customDurationMonths = normalizeDurationMonths(payment.custom_duration_months || 1);
+
+    if (requestedPlan === 'personalizado' && selectedFeatures.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Este plano personalizado não tem funcionalidades selecionadas.' });
+    }
 
     await client.query(
       "UPDATE payment_approvals SET status = 'approved', approved_by = $1, approved_at = NOW(), notified_user = false WHERE id = $2",
       [adminId, paymentId]
     );
 
-    const updatedUser = await client.query(`
-      UPDATE users
-      SET
-        plan_type = 'premium',
-        subscription_plan = $3,
-        plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + ($2::int * INTERVAL '1 month'),
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING id, name, email, plan_type, subscription_plan, plan_expires_at
-    `, [payment.user_id, monthsToAdd, requestedPlan]);
+    let updatedUser;
+    let activeFeatures = [];
+
+    if (requestedPlan === 'personalizado') {
+      updatedUser = await client.query(`
+        UPDATE users
+        SET
+          plan_type = 'custom',
+          subscription_plan = 'personalizado',
+          plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + ($2::int * INTERVAL '1 month'),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING id, name, email, plan_type, subscription_plan, plan_expires_at
+      `, [payment.user_id, customDurationMonths]);
+
+      activeFeatures = await grantFeatureAccess({
+        userId: payment.user_id,
+        featureKeys: selectedFeatures,
+        durationMonths: customDurationMonths,
+        paymentId
+      }, client);
+
+      await createUserNotification({
+        userId: payment.user_id,
+        title: 'Plano personalizado aprovado',
+        message: `O seu plano personalizado foi aprovado com ${activeFeatures.length} funcionalidade(s) ativa(s).`,
+        tab: 'dashboard',
+        type: 'success'
+      }, client);
+    } else {
+      const monthsToAdd = requestedPlan === 'semestral' ? 6 : 12;
+      updatedUser = await client.query(`
+        UPDATE users
+        SET
+          plan_type = 'premium',
+          subscription_plan = $3,
+          plan_expires_at = GREATEST(NOW(), COALESCE(plan_expires_at, NOW())) + ($2::int * INTERVAL '1 month'),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+        RETURNING id, name, email, plan_type, subscription_plan, plan_expires_at
+      `, [payment.user_id, monthsToAdd, requestedPlan]);
+    }
 
     await client.query(
       "INSERT INTO admin_logs (admin_id, action_type, description) VALUES ($1, $2, $3)",
-      [adminId, 'success', `Aprovou pagamento ${requestedPlan} de ${payment.user_name}`]
+      [
+        adminId,
+        'success',
+        requestedPlan === 'personalizado'
+          ? `Aprovou plano personalizado de ${payment.user_name}: ${selectedFeatures.join(', ')}`
+          : `Aprovou pagamento ${requestedPlan} de ${payment.user_name}`
+      ]
     );
 
     await client.query('COMMIT');
 
-    try {
-      await sendPaymentApproved(payment.email, payment.user_name, requestedPlan === 'anual' ? 'annual' : 'semestral');
-    } catch (emailError) {
-      console.error('Erro ao enviar email de pagamento aprovado:', emailError);
+    if (requestedPlan !== 'personalizado') {
+      try {
+        await sendPaymentApproved(payment.email, payment.user_name, requestedPlan === 'anual' ? 'annual' : 'semestral');
+      } catch (emailError) {
+        console.error('Erro ao enviar email de pagamento aprovado:', emailError);
+      }
     }
 
-    res.json({ message: 'Pagamento aprovado e plano atualizado!', user: updatedUser.rows[0] });
+    const responseUser = updatedUser.rows[0];
+    responseUser.custom_features = requestedPlan === 'personalizado'
+      ? activeFeatures
+      : await getActiveFeatureKeys(payment.user_id);
+
+    res.json({ message: 'Pagamento aprovado e plano atualizado!', user: responseUser });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Erro ao aprovar pagamento:', error);

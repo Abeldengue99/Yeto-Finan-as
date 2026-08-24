@@ -527,7 +527,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                   usuario.avatar
                 )}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="user-profile-text" style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontWeight: '600', color: 'var(--text-primary)', fontSize: '0.95rem' }}>Olá, {usuario.nome}!</span>
                 {usuario.profissao && <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{usuario.profissao}</span>}
               </div>
@@ -859,11 +859,11 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
                 </>
               )}
 
-              <div className="mobile-menu-section-title" style={{ marginTop: isAdmin ? '1.5rem' : '0.5rem' }}>Finanças Familiares</div>
+              <div className="mobile-menu-section-title" style={{ marginTop: isAdmin ? '1.5rem' : '0.5rem' }}>As Minhas Finanças</div>
               <button className={`mobile-menu-link ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => { setActiveTab('dashboard'); setShowMobileMenu(false); }}><span>📊</span> Dashboard</button>
               <button className={`mobile-menu-link ${activeTab === 'bancos' ? 'active' : ''}`} onClick={() => { setActiveTab('bancos'); setShowMobileMenu(false); }}><span>🏦</span> Bancos & Carteiras</button>
               <button className={`mobile-menu-link ${activeTab === 'transacoes' ? 'active' : ''}`} onClick={() => { setActiveTab('transacoes'); setShowMobileMenu(false); }}><span>💸</span> Transações</button>
-              <button className={`mobile-menu-link ${activeTab === 'orcamento' ? 'active' : ''}`} onClick={() => navigateToTab('orcamento')}><span>📋</span> Orçamento Familiar</button>
+              <button className={`mobile-menu-link ${activeTab === 'orcamento' ? 'active' : ''}`} onClick={() => navigateToTab('orcamento')}><span>📋</span> Orçamento Mensal</button>
               <button className={`mobile-menu-link ${activeTab === 'calendario' ? 'active' : ''}`} onClick={() => navigateToTab('calendario')}><span>📅</span> Calendário Financeiro</button>
               <button className={`mobile-menu-link ${activeTab === 'previsao' ? 'active' : ''}`} onClick={() => navigateToTab('previsao')}><span>🧭</span> Previsão & Emergência</button>
               <button className={`mobile-menu-link ${activeTab === 'lista_compras' ? 'active' : ''}`} onClick={() => navigateToTab('lista_compras')}><span>🛒</span> Lista de Compras</button>
@@ -874,7 +874,7 @@ export default function DashboardLayout({ children, activeTab, setActiveTab, onL
               )}
               <button className={`mobile-menu-link ${activeTab === 'divisas' ? 'active' : ''}`} onClick={() => navigateToTab('divisas')}><span>🌍</span> Câmbio & Divisas</button>
               <button className={`mobile-menu-link ${activeTab === 'projetos' ? 'active' : ''}`} onClick={() => navigateToTab('projetos')}><span>🎯</span> Projetos (Sonhos)</button>
-              <button className={`mobile-menu-link ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => navigateToTab('gamificacao')}><span>🎮</span> Desafios Familiares</button>
+              <button className={`mobile-menu-link ${activeTab === 'gamificacao' ? 'active' : ''}`} onClick={() => navigateToTab('gamificacao')}><span>🎮</span> Desafios & Metas</button>
               <button className={`mobile-menu-link ${activeTab === 'kixikila' ? 'active' : ''}`} onClick={() => navigateToTab('kixikila')}><span>🤝</span> Kixikila</button>
             </div>
             

@@ -20,11 +20,13 @@ export default function Gamificacao() {
   const [claimingId, setClaimingId] = useState(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
 
+  const hasGamificacaoAccess = usuario?.isPremium || usuario?.featureAccess?.includes('gamificacao');
+
   useEffect(() => {
-    if (usuario?.isPremium) {
+    if (hasGamificacaoAccess) {
       void carregarGamificacao?.();
     }
-  }, [usuario?.isPremium]);
+  }, [hasGamificacaoAccess]);
 
   const reward = gamificationRewards?.[0] || {
     title: '1 mês Premium',
@@ -60,12 +62,12 @@ export default function Gamificacao() {
     setIsRedeeming(false);
   };
 
-  if (!usuario?.isPremium) {
+  if (!hasGamificacaoAccess) {
     return (
       <div className="dash-card" style={{ minHeight: '55vh', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
         <div style={{ maxWidth: 560 }}>
           <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎮</div>
-          <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>Desafios Familiares</h2>
+          <h2 style={{ color: 'var(--text-primary)', marginBottom: '1rem' }}>Desafios & Metas</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
             A gamificação fica disponível durante o mês grátis e nos planos Premium. Complete missões financeiras,
             ganhe YetoPoints e troque por recompensas dentro da plataforma.
@@ -79,8 +81,8 @@ export default function Gamificacao() {
     <div style={{ paddingBottom: '2rem' }}>
       <div className="transactions-page-header" style={{ marginBottom: '2rem' }}>
         <div>
-          <h1 className="page-title">🎮 Desafios Familiares</h1>
-          <p className="text-secondary">Ganhe pontos por organizar melhor o dinheiro da família.</p>
+          <h1 className="page-title">🎮 Desafios & Metas</h1>
+          <p className="text-secondary">Ganhe pontos por organizar melhor o seu dinheiro.</p>
         </div>
         <button
           type="button"

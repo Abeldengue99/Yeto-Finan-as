@@ -1,16 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const financeController = require('../controllers/financeController');
-const { authenticate, requireAnnualFeatureAccess, requirePlanAccess, requireSelfBody, requireSelfParam } = require('../middleware/auth');
+const { authenticate, requireAnnualFeatureAccess, requireFeatureAccess, requireSelfBody, requireSelfParam } = require('../middleware/auth');
 const { validateUuidParam } = require('../middleware/security');
 
 router.use(authenticate);
 
 router.get('/payment-status/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getPaymentStatus);
-router.get('/:userId/budgets', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getBudgets);
-router.get('/:userId/calendar', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getFinancialCalendar);
+router.get('/:userId/budgets', validateUuidParam('userId'), requireSelfParam('userId'), requireFeatureAccess('orcamento'), financeController.getBudgets);
+router.get('/:userId/calendar', validateUuidParam('userId'), requireSelfParam('userId'), requireFeatureAccess('calendario'), financeController.getFinancialCalendar);
 router.get('/:userId/forecast', validateUuidParam('userId'), requireSelfParam('userId'), requireAnnualFeatureAccess, financeController.getMonthEndForecast);
-router.get('/:userId/shopping-lists', validateUuidParam('userId'), requireSelfParam('userId'), requirePlanAccess, financeController.getShoppingLists);
+router.get('/:userId/shopping-lists', validateUuidParam('userId'), requireSelfParam('userId'), requireFeatureAccess('lista_compras'), financeController.getShoppingLists);
 router.get('/:userId', validateUuidParam('userId'), requireSelfParam('userId'), financeController.getUserFinances);
 
 // Contas
@@ -36,26 +36,26 @@ router.delete('/fixed-payment/:id', validateUuidParam('id'), financeController.d
 router.put('/fixed-payment/:id/pay', validateUuidParam('id'), financeController.payFixedPayment);
 
 // Funcionalidades Premium: trial gratis ativo ou plano premium ativo
-router.post('/kixikila', requirePlanAccess, requireSelfBody('userId'), financeController.createKixikila);
-router.put('/kixikila/:id', validateUuidParam('id'), requirePlanAccess, financeController.updateKixikila);
-router.delete('/kixikila/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteKixikila);
-router.put('/kixikila/:id/pay', validateUuidParam('id'), requirePlanAccess, financeController.receiveKixikilaHand);
+router.post('/kixikila', requireFeatureAccess('kixikila'), requireSelfBody('userId'), financeController.createKixikila);
+router.put('/kixikila/:id', validateUuidParam('id'), requireFeatureAccess('kixikila'), financeController.updateKixikila);
+router.delete('/kixikila/:id', validateUuidParam('id'), requireFeatureAccess('kixikila'), financeController.deleteKixikila);
+router.put('/kixikila/:id/pay', validateUuidParam('id'), requireFeatureAccess('kixikila'), financeController.receiveKixikilaHand);
 
-router.post('/project', requirePlanAccess, requireSelfBody('userId'), financeController.createProject);
-router.put('/project/:id', validateUuidParam('id'), requirePlanAccess, financeController.updateProject);
-router.delete('/project/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteProject);
-router.put('/project/:id/fund', validateUuidParam('id'), requirePlanAccess, financeController.fundProject);
+router.post('/project', requireFeatureAccess('projetos'), requireSelfBody('userId'), financeController.createProject);
+router.put('/project/:id', validateUuidParam('id'), requireFeatureAccess('projetos'), financeController.updateProject);
+router.delete('/project/:id', validateUuidParam('id'), requireFeatureAccess('projetos'), financeController.deleteProject);
+router.put('/project/:id/fund', validateUuidParam('id'), requireFeatureAccess('projetos'), financeController.fundProject);
 
-router.post('/currency', requirePlanAccess, requireSelfBody('userId'), financeController.createForeignCurrency);
+router.post('/currency', requireFeatureAccess('divisas'), requireSelfBody('userId'), financeController.createForeignCurrency);
 
-router.post('/budget', requirePlanAccess, requireSelfBody('userId'), financeController.upsertBudget);
-router.delete('/budget/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteBudget);
+router.post('/budget', requireFeatureAccess('orcamento'), requireSelfBody('userId'), financeController.upsertBudget);
+router.delete('/budget/:id', validateUuidParam('id'), requireFeatureAccess('orcamento'), financeController.deleteBudget);
 
-router.post('/shopping-list', requirePlanAccess, requireSelfBody('userId'), financeController.createShoppingList);
-router.delete('/shopping-list/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteShoppingList);
-router.post('/shopping-list/:listId/item', validateUuidParam('listId'), requirePlanAccess, financeController.addShoppingListItem);
-router.put('/shopping-list-item/:id', validateUuidParam('id'), requirePlanAccess, financeController.updateShoppingListItem);
-router.delete('/shopping-list-item/:id', validateUuidParam('id'), requirePlanAccess, financeController.deleteShoppingListItem);
+router.post('/shopping-list', requireFeatureAccess('lista_compras'), requireSelfBody('userId'), financeController.createShoppingList);
+router.delete('/shopping-list/:id', validateUuidParam('id'), requireFeatureAccess('lista_compras'), financeController.deleteShoppingList);
+router.post('/shopping-list/:listId/item', validateUuidParam('listId'), requireFeatureAccess('lista_compras'), financeController.addShoppingListItem);
+router.put('/shopping-list-item/:id', validateUuidParam('id'), requireFeatureAccess('lista_compras'), financeController.updateShoppingListItem);
+router.delete('/shopping-list-item/:id', validateUuidParam('id'), requireFeatureAccess('lista_compras'), financeController.deleteShoppingListItem);
 
 // Subscricao
 router.post('/payment-proof', requireSelfBody('userId'), financeController.uploadPaymentProof);

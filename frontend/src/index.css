@@ -2078,10 +2078,9 @@ h1, h2, h3, h4, h5, h6 {
     top: 0;
     z-index: 80;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "actions status"
-      "search search";
+      "actions search status";
     align-items: center;
     gap: 0.85rem;
     margin: -1.5rem -1rem 1.25rem;
@@ -2095,16 +2094,20 @@ h1, h2, h3, h4, h5, h6 {
   .search-bar {
     grid-area: search;
     width: 100%;
-    padding: 0.78rem 1rem;
-    border-radius: 22px;
+    padding: 0.65rem 0.8rem;
+    border-radius: 20px;
     box-shadow: 0 10px 28px rgba(55, 51, 146, 0.08);
   }
 
   .search-bar input {
     font-size: 0.82rem;
-    margin-left: 0.7rem;
+    margin-left: 0.5rem;
+    width: 100%;
   }
 
+  .user-profile-text {
+    display: none !important;
+  }
   .dashboard-sync-status {
     grid-area: status;
     width: 42px;

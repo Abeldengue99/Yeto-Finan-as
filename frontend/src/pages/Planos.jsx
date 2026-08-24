@@ -3,12 +3,38 @@ import { useFinance } from '../contexts/FinanceContext';
 import { useAdmin } from '../contexts/AdminContext';
 import { apiFetch } from '../utils/api';
 
+const CUSTOM_PLAN_FEATURES = [
+  { key: 'orcamento', label: 'Orçamento Mensal', price: 900, description: 'Limites por categoria e leitura rápida do mês.' },
+  { key: 'calendario', label: 'Calendário Financeiro', price: 1000, description: 'Salários, contas fixas, dívidas, kixikila e metas.' },
+  { key: 'lista_compras', label: 'Lista de Compras', price: 900, description: 'Planeamento de mercado ligado ao orçamento.' },
+  { key: 'previsao', label: 'Previsão do Fim do Mês', price: 1500, description: 'Saldo previsto e modo emergência.' },
+  { key: 'projetos', label: 'Projetos e Metas', price: 800, description: 'Poupança para objetivos financeiros.' },
+  { key: 'divisas', label: 'Câmbio e Divisas', price: 800, description: 'Controlo de moeda estrangeira.' },
+  { key: 'kixikila', label: 'Kixikila', price: 900, description: 'Gestão de contribuições e mãos.' },
+  { key: 'gamificacao', label: 'Desafios & Metas', price: 700, description: 'YetoPoints, metas e recompensas.' },
+  { key: 'yeto_ai', label: 'Yeto AI', price: 1200, description: 'Conselheiro financeiro e análise profunda.' },
+  { key: 'relatorios_pdf', label: 'Relatórios PDF', price: 1000, description: 'Documentos profissionais para análise.' }
+];
+
+const CUSTOM_PLAN_DISCOUNTS = { 1: 0, 6: 0.1, 12: 0.2 };
+
+function calculateCustomPlanAmount(featureKeys, durationMonths) {
+  const monthlyTotal = CUSTOM_PLAN_FEATURES
+    .filter(feature => featureKeys.includes(feature.key))
+    .reduce((sum, feature) => sum + feature.price, 0);
+  const discount = CUSTOM_PLAN_DISCOUNTS[durationMonths] || 0;
+  return Math.round(monthlyTotal * durationMonths * (1 - discount));
+}
+
 export default function Planos({ user }) {
   const [showModal, setShowModal] = useState(false);
   const [proofImage, setProofImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
   const [selectedPlan, setSelectedPlan] = useState('anual');
+  const [customFeatures, setCustomFeatures] = useState([]);
+  const [customDurationMonths, setCustomDurationMonths] = useState(1);
+  const [customPlanError, setCustomPlanError] = useState('');
   const [testimonials, setTestimonials] = useState([]);
   const [testimonialForm, setTestimonialForm] = useState({
     name: user?.name || '',
@@ -25,10 +51,14 @@ export default function Planos({ user }) {
   const precoAnual = adminContext?.planPrices?.anual || 7999;
   const mensalEquivSemestral = Math.round(precoSemestral / 6);
   const mensalEquivAnual = Math.round(precoAnual / 12);
+  const customPlanAmount = calculateCustomPlanAmount(customFeatures, customDurationMonths);
+  const customPlanMonthlyBase = CUSTOM_PLAN_FEATURES
+    .filter(feature => customFeatures.includes(feature.key))
+    .reduce((sum, feature) => sum + feature.price, 0);
   const faqs = [
     {
       pergunta: 'O que é o Yeto Finanças?',
-      resposta: 'É uma plataforma de gestão financeira familiar criada para ajudar famílias a organizarem receitas, despesas, dívidas, metas, kixikila, compras e compromissos mensais num só lugar.'
+      resposta: 'É uma plataforma de gestão financeira pessoal criada para ajudar a organizar receitas, despesas, dívidas, metas, kixikila, compras e compromissos mensais num só lugar.'
     },
     {
       pergunta: 'Ao criar conta tenho acesso grátis?',
@@ -44,11 +74,11 @@ export default function Planos({ user }) {
     },
     {
       pergunta: 'Posso controlar bancos, carteiras e dinheiro em mãos?',
-      resposta: 'Sim. Pode registar contas bancárias, carteiras, saldo familiar, dinheiro a receber, dívidas a pagar e acompanhar como cada movimento afeta a vida financeira da família.'
+      resposta: 'Sim. Pode registar contas bancárias, carteiras, saldo pessoal, dinheiro a receber, dívidas a pagar e acompanhar como cada movimento afeta a sua vida financeira.'
     },
     {
-      pergunta: 'Como funciona o Orçamento Familiar?',
-      resposta: 'O utilizador define limites por categoria e acompanha quanto já gastou no mês. Isso ajuda a perceber se a família ainda está dentro do plano ou se precisa ajustar gastos.'
+      pergunta: 'Como funciona o Orçamento Mensal?',
+      resposta: 'O utilizador define limites por categoria e acompanha quanto já gastou no mês. Isso ajuda a perceber se ainda está dentro do plano ou se precisa ajustar gastos.'
     },
     {
       pergunta: 'Para que serve o Calendário Financeiro?',
@@ -126,13 +156,18 @@ export default function Planos({ user }) {
         if (data.notifications && data.notifications.length > 0) {
           data.notifications.forEach(notif => {
             if (notif.status === 'approved') {
-              adicionarNotificacao('✅ Pagamento Aprovado', 'O seu pagamento foi aprovado! Já tem acesso a todas as funcionalidades Premium. Obrigado pela confiança!');
+              adicionarNotificacao(
+                'Pagamento Aprovado',
+                notif.plan_requested === 'personalizado'
+                  ? 'O seu plano personalizado foi aprovado. As funcionalidades escolhidas já estão ativas.'
+                  : 'O seu pagamento foi aprovado! Já tem acesso às funcionalidades do plano escolhido. Obrigado pela confiança!'
+              );
             } else if (notif.status === 'rejected') {
               if (notif.rejection_reason) {
                 adicionarNotificacao('Pagamento Rejeitado', notif.rejection_reason);
                 return;
               }
-              adicionarNotificacao('❌ Pagamento Rejeitado', 'O seu comprovativo foi rejeitado. Por favor, verifique os dados e tente novamente ou contacte o suporte.');
+              adicionarNotificacao('Pagamento Rejeitado', 'O seu comprovativo foi rejeitado. Por favor, verifique os dados e tente novamente ou contacte o suporte.');
             }
           });
         }
@@ -159,8 +194,25 @@ export default function Planos({ user }) {
 
   const [showAuthModal, setShowAuthModal] = useState(false);
 
+  const toggleCustomFeature = (featureKey) => {
+    setCustomPlanError('');
+    setCustomFeatures(prev => (
+      prev.includes(featureKey)
+        ? prev.filter(key => key !== featureKey)
+        : [...prev, featureKey]
+    ));
+  };
+
   const handleUpgradeClick = (plan = 'anual') => {
     setSelectedPlan(plan);
+    setMessage('');
+    setCustomPlanError('');
+
+    if (plan === 'personalizado' && customFeatures.length === 0) {
+      setCustomPlanError('Escolha pelo menos uma funcionalidade para montar o seu plano personalizado.');
+      return;
+    }
+
     if (!user) {
       setShowAuthModal(true);
       return;
@@ -179,12 +231,23 @@ export default function Planos({ user }) {
       const res = await apiFetch('/api/finances/payment-proof', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, proofImage, planRequested: selectedPlan })
+        body: JSON.stringify({
+          userId: user.id,
+          proofImage,
+          planRequested: selectedPlan,
+          selectedFeatures: selectedPlan === 'personalizado' ? customFeatures : [],
+          customDurationMonths: selectedPlan === 'personalizado' ? customDurationMonths : 0
+        })
       });
       const data = await res.json();
       if (res.ok) {
         setMessage('✅ Comprovativo enviado! Aguarde aprovação.');
-        adicionarNotificacao('Comprovativo Enviado', 'O seu comprovativo de pagamento foi enviado com sucesso. Aguarde a aprovação do administrador.');
+        adicionarNotificacao(
+          'Comprovativo Enviado',
+          selectedPlan === 'personalizado'
+            ? 'O comprovativo do seu plano personalizado foi enviado. Aguarde a validação do administrador.'
+            : 'O seu comprovativo de pagamento foi enviado com sucesso. Aguarde a aprovação do administrador.'
+        );
         setTimeout(() => { setShowModal(false); setMessage(''); setProofImage(null); }, 3000);
       } else {
         setMessage('❌ ' + (data.error || 'Erro ao enviar.'));
@@ -230,6 +293,17 @@ export default function Planos({ user }) {
       setIsSubmittingTestimonial(false);
     }
   };
+
+  const selectedPlanLabel = selectedPlan === 'personalizado'
+    ? `Personalizado (${customFeatures.length} funcionalidade(s), ${customDurationMonths} mês(es))`
+    : selectedPlan === 'semestral'
+      ? 'Semestral'
+      : 'Anual';
+  const selectedPlanAmount = selectedPlan === 'personalizado'
+    ? customPlanAmount
+    : selectedPlan === 'semestral'
+      ? precoSemestral
+      : precoAnual;
 
   return (
     <div style={{ paddingBottom: '2rem' }}>
@@ -338,6 +412,91 @@ export default function Planos({ user }) {
 
       </div>
 
+      <section className="dash-card" style={{ margin: '3rem auto 2rem', maxWidth: '1100px', padding: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+          <div style={{ maxWidth: '660px' }}>
+            <span style={{ color: '#373392', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.82rem' }}>
+              Plano personalizado
+            </span>
+            <h3 style={{ margin: '0.35rem 0', fontSize: '2rem', color: 'var(--text-primary)' }}>
+              Pague só pelas funcionalidades que realmente precisa
+            </h3>
+            <p className="text-secondary" style={{ margin: 0, lineHeight: 1.6 }}>
+              Escolha os módulos que fazem sentido para a sua família. As funcionalidades compradas continuam a ler os dados básicos já registados, como bancos, receitas, despesas, dívidas e pagamentos fixos.
+            </p>
+          </div>
+          <div style={{ minWidth: '220px', textAlign: 'right' }}>
+            <span className="text-secondary" style={{ display: 'block', fontWeight: 700 }}>Total estimado</span>
+            <strong style={{ display: 'block', fontSize: '2rem', color: '#373392' }}>
+              Kz {customPlanAmount.toLocaleString('pt-AO')}
+            </strong>
+            <small className="text-secondary">
+              Base: Kz {customPlanMonthlyBase.toLocaleString('pt-AO')} / mês
+            </small>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '0.9rem', marginBottom: '1.4rem' }}>
+          {CUSTOM_PLAN_FEATURES.map(feature => {
+            const checked = customFeatures.includes(feature.key);
+            return (
+              <label
+                key={feature.key}
+                style={{
+                  display: 'flex',
+                  gap: '0.8rem',
+                  padding: '1rem',
+                  borderRadius: '16px',
+                  border: checked ? '1px solid #373392' : '1px solid var(--glass-border)',
+                  background: checked ? 'rgba(55, 51, 146, 0.08)' : '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleCustomFeature(feature.key)}
+                  style={{ width: '18px', height: '18px', marginTop: '0.2rem' }}
+                />
+                <span>
+                  <strong style={{ display: 'block', color: 'var(--text-primary)' }}>{feature.label}</strong>
+                  <small className="text-secondary" style={{ display: 'block', lineHeight: 1.45 }}>{feature.description}</small>
+                  <small style={{ display: 'block', marginTop: '0.35rem', color: '#10b981', fontWeight: 800 }}>
+                    Kz {feature.price.toLocaleString('pt-AO')} / mês
+                  </small>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <label style={{ minWidth: '220px', flex: '1 1 220px' }}>
+            <span className="text-secondary" style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 700 }}>Duração</span>
+            <select
+              className="qt-input"
+              value={customDurationMonths}
+              onChange={event => setCustomDurationMonths(Number(event.target.value))}
+            >
+              <option value={1}>1 mês</option>
+              <option value={6}>6 meses - 10% de desconto</option>
+              <option value={12}>12 meses - 20% de desconto</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn btn-primary btn-pill"
+            style={{ minWidth: '240px', padding: '1rem 1.3rem', fontWeight: 800 }}
+            onClick={() => handleUpgradeClick('personalizado')}
+          >
+            Solicitar plano personalizado
+          </button>
+        </div>
+        {customPlanError && (
+          <p style={{ margin: '1rem 0 0', color: '#ef4444', fontWeight: 700 }}>{customPlanError}</p>
+        )}
+      </section>
+
       <section className="planos-testimonial-section">
         <div className="planos-testimonial-header">
           <span>Experiências reais</span>
@@ -425,10 +584,23 @@ export default function Planos({ user }) {
         <div className="sobre-modal-overlay">
           <div className="sobre-modal-container" style={{ maxWidth: '520px', padding: '2rem' }}>
             <button className="sobre-modal-close" onClick={() => setShowModal(false)}>×</button>
-            <h2 style={{ textAlign: 'center', marginBottom: '1rem', color: '#373392' }}>Renovar para Premium</h2>
+            <h2 style={{ textAlign: 'center', marginBottom: '1rem', color: '#373392' }}>
+              {selectedPlan === 'personalizado' ? 'Solicitar Plano Personalizado' : 'Renovar para Premium'}
+            </h2>
             <p style={{ textAlign: 'center', marginBottom: '1.5rem', color: '#555' }}>
-              Plano escolhido: <strong>{selectedPlan === 'semestral' ? 'Semestral' : 'Anual'}</strong>. Faça a transferência ou depósito usando um dos métodos abaixo. De seguida, anexe o comprovativo.
+              Plano escolhido: <strong>{selectedPlanLabel}</strong> no valor de <strong>Kz {selectedPlanAmount.toLocaleString('pt-AO')}</strong>. Faça a transferência ou depósito usando um dos métodos abaixo. De seguida, anexe o comprovativo.
             </p>
+            {selectedPlan === 'personalizado' && (
+              <div style={{ background: '#f4f3ff', border: '1px solid #dedcff', borderRadius: '14px', padding: '1rem', marginBottom: '1rem' }}>
+                <strong style={{ color: '#373392' }}>Funcionalidades selecionadas</strong>
+                <p style={{ margin: '0.5rem 0 0', color: '#555', lineHeight: 1.5 }}>
+                  {CUSTOM_PLAN_FEATURES
+                    .filter(feature => customFeatures.includes(feature.key))
+                    .map(feature => feature.label)
+                    .join(', ')}
+                </p>
+              </div>
+            )}
             
             <div style={{ background: '#f8f9fc', padding: '1.5rem', borderRadius: '15px', marginBottom: '1rem' }}>
               <p style={{ margin: '0 0 10px 0' }}><strong>🏦 IBAN do BFA:</strong><br/>AO06000600000201476030139<br/><small>(ALEXANDRINA DA ROSA PEDRO DE OLIVEIRA)</small></p>

@@ -74,7 +74,7 @@ export default function AdminDashboard({ setActiveTab }) {
   );
   const filteredStats = useMemo(() => {
     const nonAdminUsers = filteredUsers.filter(user => user.plano !== 'Admin');
-    const premiumUsers = filteredUsers.filter(user => user.plano === 'Premium').length;
+    const premiumUsers = filteredUsers.filter(user => user.plano === 'Premium' || user.plano === 'Personalizado').length;
     const blockedUsersCount = filteredUsers.filter(user => user.status === 'Bloqueado').length;
     return {
       totalUsers: nonAdminUsers.length,
@@ -164,7 +164,7 @@ export default function AdminDashboard({ setActiveTab }) {
         <AdminMetricCard
           label="Utilizadores"
           value={stats.totalUsers}
-          detail={`+${stats.newUsers7d} nos últimos 7 dias`}
+          detail={stats.adminUsers > 0 ? `Inclui ${stats.adminUsers} admin(s)` : `+${stats.newUsers7d} nos últimos 7 dias`}
           tone="neutral"
         />
         <AdminMetricCard

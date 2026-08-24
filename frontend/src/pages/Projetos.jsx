@@ -13,6 +13,7 @@ export default function Projetos() {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [itemToEdit, setItemToEdit] = useState(null);
   const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
+  const hasProjetosAccess = usuario?.isPremium || usuario?.featureAccess?.includes('projetos');
 
   const projetosFiltrados = useMemo(
     () => filterByPeriod(projetos, periodFilter, item => item.prazo),
@@ -42,17 +43,22 @@ export default function Projetos() {
 
   const handleOpenCreateModal = () => {
     setItemToEdit(null);
-    if (!usuario?.isPremium && projetos.length >= 2) {
+    if (!hasProjetosAccess) {
       adicionarNotificacao(
-        '⚠️ Limite Atingido', 
-        'O plano gratuito permite no máximo 2 projetos ativos. Renove para o Plano Premium para criar projetos ilimitados!'
+        'Funcionalidade Premium',
+        'Adicione Projetos ao plano personalizado ou renove para Premium para criar e gerir metas financeiras.'
       );
-    } else {
-      setIsModalOpen(true);
+      return;
     }
+
+    setIsModalOpen(true);
   };
 
   const openEditModal = (projeto) => {
+    if (!hasProjetosAccess) {
+      adicionarNotificacao('Funcionalidade Premium', 'Adicione Projetos ao seu plano para editar metas financeiras.');
+      return;
+    }
     setItemToEdit(projeto);
     setIsModalOpen(true);
   };
@@ -66,6 +72,10 @@ export default function Projetos() {
   };
 
   const openDepositarModal = (id) => {
+    if (!hasProjetosAccess) {
+      adicionarNotificacao('Funcionalidade Premium', 'Adicione Projetos ao seu plano para financiar metas financeiras.');
+      return;
+    }
     setSelectedProjetoId(id);
     setIsDepositarModalOpen(true);
   };

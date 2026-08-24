@@ -5,6 +5,8 @@ import { useFinance } from '../contexts/FinanceContext';
 import { generateTransactionsReport } from '../utils/pdfSpecificGenerators';
 import PeriodFilter from '../components/PeriodFilter';
 import { createDefaultPeriodFilter, filterByPeriod, getPeriodLabel } from '../utils/periodFilters';
+import ImportadorExtrato from '../components/ImportadorExtrato';
+
 
 export default function Transacoes() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -14,6 +16,8 @@ export default function Transacoes() {
   const [itemToEdit, setItemToEdit] = useState(null);
   const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
   const [tipoFiltro, setTipoFiltro] = useState('todos');
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
   
   const { 
     contas, movimentos, usuario,
@@ -96,17 +100,19 @@ export default function Transacoes() {
 
   return (
     <div>
-      <div className="transactions-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+      <div className="transactions-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
           <h2 style={{ color: 'var(--text-primary)' }}>Gestão de Transações</h2>
           <p className="text-secondary">Registe aqui todos os salários, bónus e despesas da casa.</p>
         </div>
-        <div className="transactions-page-actions" style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn btn-pill" onClick={handleExportPdf} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>📄 Exportar PDF</button>
-          <button className="btn btn-glass btn-pill" onClick={() => setIsCategoriaModalOpen(true)}>Gestão de Categorias</button>
+        <div className="transactions-page-actions" style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
           <button className="btn btn-primary btn-pill" onClick={openNewModal}>+ Novo Registo</button>
+          <button className="btn btn-secondary btn-pill" onClick={() => setIsImportModalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>✨ IA Extrato</button>
+          <button className="btn btn-glass btn-pill" onClick={() => setIsCategoriaModalOpen(true)}>Categorias</button>
+          <button className="btn btn-pill" onClick={handleExportPdf} style={{ background: '#e0e0e0', border: 'none', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 'bold' }}>📄 PDF</button>
         </div>
       </div>
+
 
       <div className="dash-card">
         <div className="page-filter-bar">
@@ -290,6 +296,9 @@ export default function Transacoes() {
           </div>
         </div>
       </Modal>
+
+      <ImportadorExtrato isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} />
     </div>
+
   );
 }

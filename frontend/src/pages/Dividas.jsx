@@ -75,8 +75,9 @@ export default function Dividas() {
   };
 
   const handleExportPdf = () => {
-    if (!usuario?.isPremium) {
-      mostrarAlerta('Plano Premium', 'Renove o plano para exportar relatorios PDF profissionais.', 'erro');
+    const hasPdfAccess = usuario?.isPremium || usuario?.featureAccess?.includes('relatorios_pdf');
+    if (!hasPdfAccess) {
+      mostrarAlerta('Funcionalidade', 'Renove o plano ou adicione a funcionalidade de Relatórios PDF para exportar relatórios profissionais.', 'erro');
       return;
     }
 

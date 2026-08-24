@@ -77,6 +77,7 @@ export default function CalendarioFinanceiro() {
   const [filter, setFilter] = useState('todos');
   const [isLoading, setIsLoading] = useState(false);
   const loadCalendarRef = useRef(carregarCalendarioFinanceiro);
+  const hasCalendarAccess = usuario?.isPremium || usuario?.featureAccess?.includes('calendario');
 
   useEffect(() => {
     loadCalendarRef.current = carregarCalendarioFinanceiro;
@@ -89,7 +90,7 @@ export default function CalendarioFinanceiro() {
   }, [selectedMonth, selectedDate]);
 
   useEffect(() => {
-    if (!usuario?.isPremium) return;
+    if (!hasCalendarAccess) return;
 
     let cancelled = false;
     setIsLoading(true);
@@ -100,7 +101,7 @@ export default function CalendarioFinanceiro() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth, usuario?.isPremium]);
+  }, [selectedMonth, hasCalendarAccess]);
 
   const allEvents = calendarioFinanceiro?.events || emptyEvents;
 
@@ -146,7 +147,7 @@ export default function CalendarioFinanceiro() {
       .slice(0, 6);
   }, [allEvents, todayKey]);
 
-  if (!usuario?.isPremium) {
+  if (!hasCalendarAccess) {
     return (
       <div className="finance-calendar-page">
         <div className="calendar-locked dash-card">

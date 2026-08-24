@@ -457,7 +457,7 @@ export default function LoginScreen({ onLogin }) {
       {/* Lado Esquerdo - Imagem e Fundo Curvo */}
       <div className="login-left">
         <div className="login-left-content">
-          <img src={familyImg} alt="Família feliz a poupar" />
+          <img src={familyImg} alt="Pessoas a gerir finanças" />
           
           <div style={{ marginTop: '2rem', textAlign: 'center' }}>
             <button 
@@ -536,16 +536,16 @@ export default function LoginScreen({ onLogin }) {
             
             <div className="sobre-modal-header">
               <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🌍</div>
-              <h1>Yeto Finanças: O seu parceiro familiar</h1>
+              <h1>Yeto Finanças: O seu parceiro financeiro</h1>
               <p>
-                A palavra <strong>Yeto</strong> significa <em>"Nosso"</em> na nossa terra. E é exatamente esse o espírito: o <strong>Nosso</strong> dinheiro, a <strong>Nossa</strong> família, o <strong>Nosso</strong> futuro. 
+                A palavra <strong>Yeto</strong> significa <em>"Nosso"</em> na nossa terra. E é exatamente esse o espírito: o <strong>Nosso</strong> dinheiro, o <strong>Nosso</strong> crescimento, o <strong>Nosso</strong> futuro. 
               </p>
               <div style={{ textAlign: 'left', marginTop: '1.5rem', background: '#f8f9fc', padding: '1.5rem', borderRadius: '15px' }}>
                 <h3 style={{ color: '#373392', marginBottom: '1rem', fontSize: '1.2rem' }}>Porquê criar a sua conta no Yeto Finanças?</h3>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                   <li>✅ <strong>Clareza imediata:</strong> Veja quanto entra, quanto sai e quanto ainda pode gastar, sem folhas de cálculo nem confusão.</li>
                   <li>✅ <strong>Decisões antes do aperto:</strong> Acompanhe contas fixas, dívidas, metas, kixikila e compras para evitar surpresas no fim do mês.</li>
-                  <li>✅ <strong>Feito para Angola:</strong> Pensado para salário mensal, apoio familiar, propinas, prestações, divisas, mercado e a realidade das famílias angolanas.</li>
+                  <li>✅ <strong>Feito para Angola:</strong> Pensado para salário mensal, despesas do dia-a-dia, propinas, prestações, divisas, mercado e a realidade dos angolanos.</li>
                   <li>✅ <strong>Motivação para poupar:</strong> Transforme disciplina financeira em conquistas com metas, YetoPoints e recompensas dentro da plataforma.</li>
                 </ul>
               </div>

@@ -54,13 +54,14 @@ export default function ListaCompras() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const loadShoppingRef = useRef(carregarListaCompras);
+  const hasShoppingAccess = usuario?.isPremium || usuario?.featureAccess?.includes('lista_compras');
 
   useEffect(() => {
     loadShoppingRef.current = carregarListaCompras;
   }, [carregarListaCompras]);
 
   useEffect(() => {
-    if (!usuario?.isPremium) return;
+    if (!hasShoppingAccess) return;
 
     let cancelled = false;
     setIsSaving(true);
@@ -71,7 +72,7 @@ export default function ListaCompras() {
     return () => {
       cancelled = true;
     };
-  }, [selectedMonth, usuario?.isPremium]);
+  }, [selectedMonth, hasShoppingAccess]);
 
   useEffect(() => {
     if (!itemForm.categoria && categoriasSaidas.length > 0) {
@@ -133,7 +134,7 @@ export default function ListaCompras() {
     atualizarItemListaCompras(item.id, { ...item, comprado: !item.comprado }, selectedMonth);
   };
 
-  if (!usuario?.isPremium) {
+  if (!hasShoppingAccess) {
     return (
       <div className="shopping-page">
         <div className="shopping-locked dash-card">
@@ -155,7 +156,7 @@ export default function ListaCompras() {
           <span className="shopping-kicker">Mercado inteligente</span>
           <h2>Lista de Compras com Orçamento</h2>
           <p className="text-secondary">
-            Planeie a compra e compare o total previsto com os limites definidos no Orçamento Familiar.
+            Planeie a compra e compare o total previsto com os limites definidos no Orçamento Mensal.
           </p>
         </div>
         <div className="shopping-month-control">

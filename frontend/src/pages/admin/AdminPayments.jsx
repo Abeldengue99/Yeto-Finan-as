@@ -16,6 +16,30 @@ function statusClass(status) {
   return 'warning';
 }
 
+const FEATURE_LABELS = {
+  orcamento: 'Orçamento Mensal',
+  calendario: 'Calendário Financeiro',
+  lista_compras: 'Lista de Compras',
+  previsao: 'Previsão do Fim do Mês',
+  projetos: 'Projetos e Metas',
+  divisas: 'Câmbio e Divisas',
+  kixikila: 'Kixikila',
+  gamificacao: 'Desafios & Metas',
+  yeto_ai: 'Yeto AI',
+  relatorios_pdf: 'Relatórios PDF'
+};
+
+function planLabel(payment) {
+  if (payment.plano === 'personalizado') return 'Personalizado';
+  if (payment.plano === 'semestral') return 'Semestral';
+  return 'Anual';
+}
+
+function featureListLabel(features = []) {
+  if (!Array.isArray(features) || features.length === 0) return 'Todas as funcionalidades do plano';
+  return features.map(feature => FEATURE_LABELS[feature] || feature).join(', ');
+}
+
 function csvCell(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
 }
@@ -25,6 +49,8 @@ function downloadPaymentsCsv(payments) {
     'Utilizador',
     'Email',
     'Plano',
+    'Funcionalidades',
+    'Duracao personalizada',
     'Valor estimado',
     'Estado',
     'Submetido em',
@@ -35,7 +61,9 @@ function downloadPaymentsCsv(payments) {
   const rows = payments.map(payment => [
     payment.nome,
     payment.email,
-    payment.plano,
+    planLabel(payment),
+    featureListLabel(payment.selectedFeatures),
+    payment.customDurationMonths ? `${payment.customDurationMonths} mes(es)` : '',
     payment.valor,
     statusLabel(payment.status),
     payment.dataSubmissao,
@@ -114,7 +142,7 @@ export default function AdminPayments() {
 
     if (ok) {
       setRejectTarget(null);
-      setFeedback({ type: 'success', text: 'Pagamento rejeitado e utilizador notificado por email.' });
+      setFeedback({ type: 'success', text: 'Pagamento rejeitado e utilizador notificado no perfil.' });
     } else {
       setFeedback({ type: 'danger', text: 'Não foi possível rejeitar este comprovativo.' });
     }
@@ -172,6 +200,7 @@ export default function AdminPayments() {
             <option value="todos">Todos</option>
             <option value="semestral">Semestral</option>
             <option value="anual">Anual</option>
+            <option value="personalizado">Personalizado</option>
           </select>
         </div>
         <div className="filter-field">
@@ -208,8 +237,20 @@ export default function AdminPayments() {
               <div className="admin-payment-details">
                 <div>
                   <span>Plano</span>
-                  <strong>{payment.plano === 'semestral' ? 'Semestral' : 'Anual'}</strong>
+                  <strong>{planLabel(payment)}</strong>
                 </div>
+                {payment.plano === 'personalizado' && (
+                  <>
+                    <div>
+                      <span>Duração</span>
+                      <strong>{payment.customDurationMonths || 1} mês(es)</strong>
+                    </div>
+                    <div>
+                      <span>Funcionalidades</span>
+                      <strong>{featureListLabel(payment.selectedFeatures)}</strong>
+                    </div>
+                  </>
+                )}
                 <div>
                   <span>Valor</span>
                   <strong>Kz {Number(payment.valor || 0).toLocaleString('pt-AO')}</strong>

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const pool = require('../config/database');
+const { getActiveFeatureKeys, isFullPlanUser } = require('../services/featureAccessService');
 
 const TOKEN_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS || 2 * 60 * 60);
 const FALLBACK_SECRET = 'dev-only-yeto-session-secret-change-before-production';
@@ -103,6 +104,9 @@ function getEffectiveExpiry(user) {
 
 function hasActivePlanAccess(user) {
   if (user?.plan_type === 'admin') return true;
+  if (isActiveFreeTrial(user)) return true;
+  if (!isFullPlanUser(user)) return false;
+
   const expiresAt = getEffectiveExpiry(user);
   return Boolean(expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt > new Date());
 }
@@ -118,6 +122,16 @@ function hasAnnualFeatureAccess(user) {
   if (isActiveFreeTrial(user)) return true;
   if (!hasActivePlanAccess(user)) return false;
   return user?.subscription_plan === 'anual';
+}
+
+async function hasFeatureAccess(user, featureKey) {
+  if (!featureKey) return hasActivePlanAccess(user);
+  if (user?.plan_type === 'admin') return true;
+  if (isActiveFreeTrial(user)) return true;
+  if (isFullPlanUser(user) && hasActivePlanAccess(user)) return true;
+
+  const activeFeatures = user?.custom_features || await getActiveFeatureKeys(user?.id);
+  return activeFeatures.includes(featureKey);
 }
 
 async function getAdminPermissionsForUser(user) {
@@ -164,6 +178,7 @@ async function authenticate(req, res, next) {
 
     req.user = {
       ...user,
+      custom_features: await getActiveFeatureKeys(user.id),
       admin_permissions: await getAdminPermissionsForUser(user)
     };
     next();
@@ -245,23 +260,50 @@ function requirePlanAccess(req, res, next) {
 }
 
 function requireAnnualFeatureAccess(req, res, next) {
-  if (!hasAnnualFeatureAccess(req.user)) {
-    return res.status(402).json({
-      error: 'Funcionalidade exclusiva do plano Anual. Durante o mês grátis também fica disponível.',
-      annualRequired: true
-    });
-  }
+  hasFeatureAccess(req.user, 'previsao')
+    .then(hasAccess => {
+      if (!hasAccess && !hasAnnualFeatureAccess(req.user)) {
+        return res.status(402).json({
+          error: 'Funcionalidade exclusiva do plano Anual ou do plano personalizado com Previsão.',
+          annualRequired: true
+        });
+      }
 
-  next();
+      return next();
+    })
+    .catch(error => {
+      console.error('Erro ao validar acesso anual:', error);
+      return res.status(500).json({ error: 'Erro ao validar acesso.' });
+    });
+}
+
+function requireFeatureAccess(featureKey) {
+  return async (req, res, next) => {
+    try {
+      if (await hasFeatureAccess(req.user, featureKey)) {
+        return next();
+      }
+
+      return res.status(402).json({
+        error: 'Funcionalidade não incluída no seu plano atual.',
+        featureRequired: featureKey
+      });
+    } catch (error) {
+      console.error('Erro ao validar funcionalidade:', error);
+      return res.status(500).json({ error: 'Erro ao validar acesso.' });
+    }
+  };
 }
 
 module.exports = {
   authenticate,
   hasAnnualFeatureAccess,
   hasActivePlanAccess,
+  hasFeatureAccess,
   requireAdmin,
   requireAdminPermission,
   requireAnnualFeatureAccess,
+  requireFeatureAccess,
   requirePlanAccess,
   requireSelfBody,
   requireSelfParam,

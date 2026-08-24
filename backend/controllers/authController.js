@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const { sendVerificationCode, sendPasswordReset } = require('../services/emailService');
 const { signSession, getAdminPermissionsForUser } = require('../middleware/auth');
+const { getActiveFeatureKeys } = require('../services/featureAccessService');
 
 /**
  * Gera um código numérico aleatório de 6 dígitos
@@ -87,6 +88,7 @@ const buildSessionResponse = async (user) => ({
   email_verified: Boolean(user.email_verified),
   plan_type: user.plan_type,
   subscription_plan: user.subscription_plan || (user.plan_type === 'admin' ? 'admin' : user.plan_type === 'premium' ? 'anual' : 'free'),
+  custom_features: await getActiveFeatureKeys(user.id),
   admin_permissions: await getAdminPermissionsForUser(user),
   yeto_points: user.yeto_points || 0,
   current_level: user.current_level || 1,

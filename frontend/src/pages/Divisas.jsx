@@ -8,6 +8,7 @@ export default function Divisas() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [periodFilter, setPeriodFilter] = useState(() => createDefaultPeriodFilter('month'));
   const { usuario, contas, divisas, adicionarDivisa, adicionarNotificacao } = useFinance();
+  const hasDivisasAccess = usuario?.isPremium || usuario?.featureAccess?.includes('divisas');
 
   // Mock de câmbio em tempo real (poderia vir de uma API no futuro)
   const taxasAtuais = {
@@ -16,7 +17,7 @@ export default function Divisas() {
   };
 
   const handleOpenModal = () => {
-    if (!usuario?.isPremium) {
+    if (!hasDivisasAccess) {
       adicionarNotificacao(
         '⚠️ Funcionalidade Premium', 
         'A gestão de câmbio e divisas é exclusiva do Plano Premium. Renove o seu plano para investir em moedas estrangeiras.'

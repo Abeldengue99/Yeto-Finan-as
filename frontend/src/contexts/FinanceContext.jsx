@@ -38,6 +38,11 @@ function getEffectivePlanExpiry(user) {
 
 function getPlanAccess(user) {
   const subscriptionPlan = user?.subscription_plan || (user?.plan_type === 'admin' ? 'admin' : user?.plan_type === 'premium' ? 'anual' : 'free');
+  const featureAccess = Array.isArray(user?.custom_features)
+    ? user.custom_features
+    : Array.isArray(user?.featureAccess)
+      ? user.featureAccess
+      : [];
 
   if (!user) {
     return {
@@ -47,7 +52,9 @@ function getPlanAccess(user) {
       planExpiresAt: null,
       subscription_plan: 'free',
       isTrialActive: false,
-      hasAnnualAccess: false
+      hasAnnualAccess: false,
+      featureAccess: [],
+      isCustomPlan: false
     };
   }
 
@@ -59,7 +66,9 @@ function getPlanAccess(user) {
       planExpiresAt: null,
       subscription_plan: 'admin',
       isTrialActive: false,
-      hasAnnualAccess: true
+      hasAnnualAccess: true,
+      featureAccess: ['all'],
+      isCustomPlan: false
     };
   }
 
@@ -67,18 +76,22 @@ function getPlanAccess(user) {
   const hasValidExpiry = Boolean(expiresAt);
   const isActive = hasValidExpiry && expiresAt > new Date();
   const isTrialActive = user.plan_type === 'free' && isActive;
+  const isFullPremium = user.plan_type === 'premium' && ['semestral', 'anual', 'premium'].includes(subscriptionPlan);
+  const isCustomPlan = user.plan_type === 'custom' || subscriptionPlan === 'personalizado';
   const trialDaysLeft = hasValidExpiry
     ? Math.max(0, Math.ceil((expiresAt - new Date()) / (1000 * 60 * 60 * 24)))
     : 0;
 
   return {
-    isPremium: isActive,
+    isPremium: isActive && (isTrialActive || isFullPremium),
     trialDaysLeft,
     planExpired: hasValidExpiry && !isActive,
     planExpiresAt: hasValidExpiry ? expiresAt.toISOString() : null,
     subscription_plan: subscriptionPlan,
     isTrialActive,
-    hasAnnualAccess: isTrialActive || (isActive && subscriptionPlan === 'anual')
+    hasAnnualAccess: isTrialActive || (isActive && (subscriptionPlan === 'anual' || featureAccess.includes('previsao'))),
+    featureAccess: isActive ? featureAccess : [],
+    isCustomPlan: isActive && isCustomPlan
   };
 }
 
@@ -110,8 +123,9 @@ function buildInitialUsuario(user) {
     isPremium: planAccess.isPremium,
     planExpired: planAccess.planExpired,
     isTrialActive: planAccess.isTrialActive,
-    hasAnnualAccess: planAccess.hasAnnualAccess
-    ,
+    hasAnnualAccess: planAccess.hasAnnualAccess,
+    featureAccess: planAccess.featureAccess,
+    isCustomPlan: planAccess.isCustomPlan,
     adminPermissions: user?.admin_permissions || user?.adminPermissions || {}
   };
 }
@@ -310,7 +324,7 @@ export function FinanceProvider({ children, userId, initialUser, onUserHydrated 
       if (data.user) {
         onUserHydrated?.(data.user);
         const planAccess = getPlanAccess(data.user);
-        const { isPremium, trialDaysLeft, planExpired, isTrialActive, hasAnnualAccess } = planAccess;
+        const { isPremium, trialDaysLeft, planExpired, isTrialActive, hasAnnualAccess, featureAccess, isCustomPlan } = planAccess;
 
         if (data.user.plan_type !== 'admin' && trialDaysLeft <= 3 && trialDaysLeft > 0) {
           mostrarAlerta(
@@ -377,6 +391,8 @@ export function FinanceProvider({ children, userId, initialUser, onUserHydrated 
           planExpired,
           isTrialActive,
           hasAnnualAccess,
+          featureAccess,
+          isCustomPlan,
           adminPermissions: data.user.admin_permissions || {}
         }));
         if (data.user.yeto_points !== undefined) {
@@ -447,6 +463,8 @@ export function FinanceProvider({ children, userId, initialUser, onUserHydrated 
             planExpired: planAccess.planExpired,
             isTrialActive: planAccess.isTrialActive,
             hasAnnualAccess: planAccess.hasAnnualAccess,
+            featureAccess: planAccess.featureAccess,
+            isCustomPlan: planAccess.isCustomPlan,
             adminPermissions: cached.user.admin_permissions || prev.adminPermissions || {}
           }));
         }
@@ -715,7 +733,9 @@ export function FinanceProvider({ children, userId, initialUser, onUserHydrated 
           prev.plan_expires_at === planAccess.planExpiresAt &&
           prev.subscription_plan === planAccess.subscription_plan &&
           prev.isTrialActive === planAccess.isTrialActive &&
-          prev.hasAnnualAccess === planAccess.hasAnnualAccess
+          prev.hasAnnualAccess === planAccess.hasAnnualAccess &&
+          prev.isCustomPlan === planAccess.isCustomPlan &&
+          (prev.featureAccess || []).join('|') === (planAccess.featureAccess || []).join('|')
         ) {
           return prev;
         }
@@ -1884,7 +1904,7 @@ export function FinanceProvider({ children, userId, initialUser, onUserHydrated 
     }
   };
 
-  // Funções para Orçamento Familiar
+  // Funções para Orçamento Mensal
   const carregarOrcamentos = async (mes) => {
     if (!userId) return [];
 
@@ -2404,7 +2424,9 @@ export function FinanceProvider({ children, userId, initialUser, onUserHydrated 
         isPremium: planAccess.isPremium,
         planExpired: planAccess.planExpired,
         isTrialActive: planAccess.isTrialActive,
-        hasAnnualAccess: planAccess.hasAnnualAccess
+        hasAnnualAccess: planAccess.hasAnnualAccess,
+        featureAccess: planAccess.featureAccess,
+        isCustomPlan: planAccess.isCustomPlan
       }));
 
       setYetoPoints(Number(updatedUser.yeto_points || 0));
